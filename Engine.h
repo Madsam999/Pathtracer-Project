@@ -14,12 +14,17 @@
 #include "ComputeShader.h"
 #include "Scene.h"
 
+enum ComputeType {
+    RAYTRACING = 0,
+    ACCUMULATE = 1
+};
+
 class Engine {
 public:
     Engine(std::string title, int width, int height);
     ~Engine();
     void run();
-    void createComputeShader(std::string shaderName);
+    void createComputeShader(std::string shaderName, ComputeType type);
     void createShaderProgram(std::string vertexShaderName, std::string fragmentShaderName);
 
     void RenderSingleFrame(int width, int height, int rpp, int mrb, std::string outputName);
@@ -32,6 +37,7 @@ private:
 
     Shader shader;
     ComputeShader raytracer;
+    ComputeShader accumulationShader;
 };
 
 

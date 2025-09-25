@@ -112,7 +112,8 @@ int main() {
 
     Engine engine("Hello World", width, height);
 
-    engine.createComputeShader("Shaders/test_shader.comp.glsl");
+    engine.createComputeShader("Shaders/test_shader.comp.glsl", RAYTRACING);
+    engine.createComputeShader("Shaders/accumulation.comp.glsl", ACCUMULATE);
     engine.createShaderProgram("Shaders/test_vert.vert", "Shaders/test_frag.frag");
 
     engine.RenderSingleFrame(width, height, 100, 50, "test");

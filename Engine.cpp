@@ -103,34 +103,40 @@ void Engine::run() {
     glEnableVertexAttribArray(1);
     glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)(3 * sizeof(float)));
 
-    shader.setInt("tex", 0);
+    unsigned int accumulationTexture, raytracedTexture;
 
-    // Texture Setup
-    unsigned int raytracedTexture;
+    // Setup for accumulation texture
+    glGenTextures(1, &accumulationTexture);
+    glBindTexture(GL_TEXTURE_2D, accumulationTexture);
 
-    glGenTextures(1, &raytracedTexture);
-    glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, raytracedTexture);
+    // Set texture parameters
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, width, height, 0, GL_RGBA, GL_FLOAT, NULL); // Correct initialization
-    glBindImageTexture(0, raytracedTexture, 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_RGBA32F); // Use WRITE_ONLY
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
 
-    /*
-    int rpp = 5;
-    int mrb = 5;
-    glm::vec3 RedSphereColor = glm::vec3(1.0f, 0.0f, 0.0f);
-    glm::vec3 LightColor = glm::vec3(1.0f, 1.0f, 1.0f);
-    bool DarkMode = false;
-    */
+    // Allocate memory block for texture
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, width, height, 0, GL_RGBA, GL_FLOAT, NULL);
+    glBindImageTexture(0, accumulationTexture, 0, GL_FALSE, 0, GL_READ_WRITE, GL_RGBA32F);
 
-    std::cout << "Size of Mat: " << sizeof(Mat) << " bytes" << std::endl;
-    std::cout << "Size of float: " << sizeof(float) << " bytes" << std::endl;
-    std::cout << "Size of int: " << sizeof(int) << " bytes" << std::endl;
-    std::cout << "Size of glm::vec3: " << sizeof(glm::vec3) << " bytes" << std::endl;
-    std::cout << "Size of SphereStruct: " << sizeof(SphereStruct) << " bytes" << std::endl;
+    // Setup for raytraced texture
+    glGenTextures(1, &raytracedTexture);
+    glBindTexture(GL_TEXTURE_2D, raytracedTexture);
+
+    // Set texture parameters
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+
+    // Allocate memory block for texture
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, width, height, 0, GL_RGB, GL_FLOAT, NULL);
+    glBindImageTexture(1, raytracedTexture, 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_RGBA32F);
+
+    // Activate texture for fragment shader sampler2D
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, raytracedTexture);
+    shader.setInt("tex", 0);
 
     std::vector<Sphere> sceneSpheres = scene.getSpheres();
     std::vector<SphereStruct> spheres;
@@ -179,7 +185,10 @@ void Engine::run() {
     glm::vec3 LightColor = glm::vec3(1.0f, 1.0f, 1.0f);
     bool DarkMode = false;
 
+    int frame = 0;
+
     while (!glfwWindowShouldClose(window)) {
+        frame++;
 
         raytracer.use();
 
@@ -198,7 +207,6 @@ void Engine::run() {
         ImGui_ImplOpenGL3_NewFrame();
         ImGui_ImplGlfw_NewFrame();
         ImGui::NewFrame();
-
 
 
         shader.use();
@@ -231,8 +239,13 @@ void Engine::run() {
     }
 }
 
-void Engine::createComputeShader(std::string shaderName) {
-    raytracer = ComputeShader(shaderName.c_str());
+void Engine::createComputeShader(std::string shaderName, ComputeType type) {
+    if (type == RAYTRACING) {
+        raytracer = ComputeShader(shaderName.c_str());
+    }
+    else {
+        accumulationShader = ComputeShader(shaderName.c_str());
+    }
 }
 
 void Engine::createShaderProgram(std::string vertexShaderName, std::string fragmentShaderName) {
