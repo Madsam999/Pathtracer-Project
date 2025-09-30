@@ -22,7 +22,7 @@ public:
     Scene(int ray_per_pixel, int max_ray_bounce, Camera* camera) : ray_per_pixel(ray_per_pixel), max_ray_bounce(max_ray_bounce), camera(camera) {
         Material red(glm::vec3(1.0f, 0.7f, 0.0f), glm::vec3(0.0f, 0.0f, 0.0f), 0.0f, 0.0f);
         Material green(glm::vec3(0.0f, 1.0f, 0.0f), glm::vec3(0.0f, 0.0f, 0.0f), 0.0f, 0.0f);
-        Material blue(glm::vec3(0.0f, 0.0f, 1.0f), glm::vec3(0.0f, 0.0f, 0.0f), 0.0f, 0.78f);
+        Material blue(glm::vec3(1.0f, 1.0f, 1.0f), glm::vec3(0.0f, 0.0f, 0.0f), 0.0f, 1.0f);
         Material light(glm::vec3(0.0f), glm::vec3(1.0f, 1.0f, 1.0f), 1.0f, 0.0f);
         objects.push_back(std::make_unique<Sphere>(red, glm::vec3(0.0f, -0.25f, -1.5f), 0.5f));
         objects.push_back(std::make_unique<Sphere>(green, glm::vec3(1.5f, 0.0f, -1.0f), 1.0f));

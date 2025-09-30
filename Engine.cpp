@@ -16,6 +16,11 @@ void framebuffer_size_callback(GLFWwindow *window, int width, int height) {
     glViewport(0, 0, width, height);
 }
 
+void resetAccumulation(unsigned int textureID) {
+    const float zero[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+    glClearTexImage(textureID, 0, GL_RGBA, GL_FLOAT, &zero);
+}
+
 struct Mat {
     alignas(16) glm::vec3 color;
     float padding1;
@@ -119,6 +124,8 @@ void Engine::run() {
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, width, height, 0, GL_RGBA, GL_FLOAT, NULL);
     glBindImageTexture(0, accumulationTexture, 0, GL_FALSE, 0, GL_READ_WRITE, GL_RGBA32F);
 
+    resetAccumulation(accumulationTexture);
+
     // Setup for raytraced texture
     glGenTextures(1, &raytracedTexture);
     glBindTexture(GL_TEXTURE_2D, raytracedTexture);
@@ -184,14 +191,25 @@ void Engine::run() {
     glm::vec3 RedSphereColor = glm::vec3(1.0f, 0.0f, 0.0f);
     glm::vec3 LightColor = glm::vec3(1.0f, 1.0f, 1.0f);
     bool DarkMode = false;
+    bool sunset = false;
 
     int frame = 0;
+    bool resetNeeded = false;
 
     while (!glfwWindowShouldClose(window)) {
+
+        if (camera.hasChanged() || resetNeeded) {
+            frame = 0;
+            resetAccumulation(accumulationTexture);
+            camera.resetChange();
+            resetNeeded = false;
+        }
+
         frame++;
 
         raytracer.use();
 
+        raytracer.setInt("frameCnt", frame);
         raytracer.setInt("RayPerPixel", rpp);
         raytracer.setInt("MaxRayBounce", mrb);
         raytracer.setFloat3("ViewParams", camera.viewParams);
@@ -216,8 +234,8 @@ void Engine::run() {
 
         ImGui::Begin("Settings");
         ImGui::Text("FPS: %.1f", ImGui::GetIO().Framerate);
-        ImGui::SliderInt("RPP", &rpp, 1, 100);
-        ImGui::SliderInt("Mrb", &mrb, 1, 100);
+        if (ImGui::SliderInt("RPP", &rpp, 1, 1000)) {resetNeeded = true;}
+        if (ImGui::SliderInt("Mrb", &mrb, 1, 1000)) {resetNeeded = true;}
         ImGui::ColorEdit3("color", glm::value_ptr(RedSphereColor));
         ImGui::ColorEdit3("light", glm::value_ptr(LightColor));
         ImGui::SliderFloat("Cam x", &camera.center.x, -100, 100);
@@ -227,7 +245,7 @@ void Engine::run() {
         ImGui::SliderFloat("Cam look x", &camera.lookAt.x, -10, 10);
         ImGui::SliderFloat("Cam look y", &camera.lookAt.y, -10, 10);
         ImGui::SliderFloat("Cam look z", &camera.lookAt.z, -10, 10);
-        ImGui::Checkbox("DarkMode", &DarkMode);
+        if (ImGui::Checkbox("DarkMode", &DarkMode)) {resetNeeded = true;}
         ImGui::End();
 
         ImGui::Render();

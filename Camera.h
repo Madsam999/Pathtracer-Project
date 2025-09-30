@@ -11,6 +11,7 @@
 #include <glm/fwd.hpp>
 #include <glm/geometric.hpp>
 #include <glm/gtc/matrix_transform.hpp>
+#include <glm/ext/matrix_relational.hpp>
 
 class Camera {
 public:
@@ -64,6 +65,10 @@ public:
     glm::vec3 get_up() {
         return up;
     }
+
+    bool hasChanged();
+    void resetChange();
+
     void update();
     glm::mat4 view;
     glm::vec3 viewParams;
@@ -71,7 +76,6 @@ public:
     float fov;
     glm::vec3 lookAt;
 private:
-
     float aspect_ratio;
     float focal_length;
     int image_width;
@@ -87,7 +91,7 @@ private:
     glm::vec3 pixelDelta_v;
     glm::vec3 pixel00_location;
 
-
+    bool hasBeenUpdated = false;
 };
 
 

@@ -2,7 +2,10 @@
 
 layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
 
-layout(rgba32f, binding = 0) uniform image2D image_out;
+layout(rgba32f, binding = 0) uniform image2D accumulatioBuffer;
+layout(rgba32f, binding = 1) uniform image2D image_out;
+
+uniform int frameCnt;
 
 const float PI = 3.1415926535897932384626433832795;
 const float EPSILON = 0.00001;
@@ -173,10 +176,11 @@ vec3 trace(Ray ray, inout uint seed) {
 }
 
 void main() {
-    ivec2 global_id = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 pixelCoords = ivec2(gl_GlobalInvocationID.xy);
     ivec2 image_size = imageSize(image_out);
 
-    uint rngState = uint(uint(global_id.x) * uint(1973) + uint(global_id.y) * uint(9277)) | uint(1);
+    uint rngState = uint(uint(pixelCoords.x) * uint(1973) + uint(pixelCoords.y) * uint(9277)) | uint(1);
+    rngState += uint(frameCnt);
 
     vec3 avgColor = vec3(0, 0, 0);
     for(int rpp = 0; rpp < RayPerPixel; rpp++) {
@@ -184,7 +188,7 @@ void main() {
 
         float randomX = RandomFloat01(rngState);
         float randomY = RandomFloat01(rngState);
-        vec2 uv = vec2((global_id.x + randomX) / image_size.x - 0.5f, (global_id.y + randomY) / image_size.y - 0.5f);
+        vec2 uv = vec2((pixelCoords.x + randomX) / image_size.x - 0.5f, (pixelCoords.y + randomY) / image_size.y - 0.5f);
 
         vec3 viewPointLocal = vec3(uv.x, -uv.y, -1) * ViewParams;
         vec3 rayDir = vec3(View * vec4(viewPointLocal, 0.0f));
@@ -195,6 +199,15 @@ void main() {
     }
     avgColor /= RayPerPixel;
 
-    vec4 color = clamp(vec4(avgColor, 1), 0, 1);
-    imageStore(image_out, global_id, color);
+    vec4 oldAccumulatedColor = imageLoad(accumulatioBuffer, pixelCoords);
+    vec4 accumumulatedColor = oldAccumulatedColor + vec4(avgColor, 0);
+
+    imageStore(accumulatioBuffer, pixelCoords, accumumulatedColor);
+
+    float invFrameCnt = 1 / float(frameCnt);
+    vec4 finalNormalizedColor = accumumulatedColor * invFrameCnt;
+
+    vec4 finalColor = clamp(finalNormalizedColor, 0, 1);
+
+    imageStore(image_out, pixelCoords, finalColor);
 }
