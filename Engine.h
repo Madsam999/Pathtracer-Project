@@ -16,11 +16,6 @@
 #include "Scene.h"
 #include "CameraController.h"
 
-enum ComputeType {
-    RAYTRACING = 0,
-    ACCUMULATE = 1
-};
-
 
 
 class Engine {
@@ -28,10 +23,10 @@ public:
     Engine(std::string title, int width, int height);
     ~Engine();
     void run();
-    void createComputeShader(std::string shaderName, ComputeType type);
+    void createComputeShader(std::string shaderName);
     void createShaderProgram(std::string vertexShaderName, std::string fragmentShaderName);
 
-    void RenderSingleFrame(int width, int height, int rpp, int mrb, std::string outputName);
+    void RenderSingleFrame(std::string outputName, GLuint texture);
 private:
     GLFWwindow* window;
     int width, height;
@@ -41,7 +36,6 @@ private:
 
     Shader shader;
     ComputeShader raytracer;
-    ComputeShader accumulationShader;
 };
 
 

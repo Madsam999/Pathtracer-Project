@@ -87,8 +87,6 @@ void Engine::run() {
     ImGui::StyleColorsDark();
     ImGui_ImplGlfw_InitForOpenGL(window, true);
     ImGui_ImplOpenGL3_Init("#version 430");
-
-    RenderSingleFrame(1920, 1080, 5, 2, "Test");
     // Quad Vertices
     static float quadVerts[] = {
         // positions       // texture Coords
@@ -198,6 +196,9 @@ void Engine::run() {
     int frame = 0;
     bool resetNeeded = false;
 
+    int screenShots = 0;
+    std::string outputName = "Single_Frame";
+
     while (!glfwWindowShouldClose(window)) {
 
         if (camera.hasChanged() || resetNeeded) {
@@ -208,6 +209,12 @@ void Engine::run() {
         }
 
         camController.handleInputEvent(window);
+        if (glfwGetKey(window, GLFW_KEY_ENTER) == GLFW_PRESS) {
+            RenderSingleFrame(outputName + std::to_string(screenShots) + ".png", raytracedTexture);
+            screenShots++;
+            printf("Rendered single frame");
+        }
+
 
         frame++;
 
@@ -269,61 +276,53 @@ void Engine::run() {
     }
 }
 
-void Engine::createComputeShader(std::string shaderName, ComputeType type) {
-    if (type == RAYTRACING) {
-        raytracer = ComputeShader(shaderName.c_str());
-    }
-    else {
-        accumulationShader = ComputeShader(shaderName.c_str());
-    }
+void Engine::createComputeShader(std::string shaderName) {
+
+    raytracer = ComputeShader(shaderName.c_str());
+
 }
 
 void Engine::createShaderProgram(std::string vertexShaderName, std::string fragmentShaderName) {
     shader = Shader(vertexShaderName.c_str(), fragmentShaderName.c_str());
 }
 
-void Engine::RenderSingleFrame(int width, int height, int rpp, int mrb, std::string outputName) {
-    unsigned int raytracedTexture;
+// --- CORRECTED RenderSingleFrame FUNCTION ---
+void Engine::RenderSingleFrame(std::string outputName, GLuint texture) {
+    // 1. Prepare buffer for 8-bit unsigned char data (for stbi_write_png)
+    // We are reading the final LDR image from the default framebuffer (the screen).
+    const int channels = 4;
+    size_t bufferSize = (size_t)width * height * channels;
+    unsigned char* pixelData = new unsigned char[bufferSize];
 
-    glGenTextures(1, &raytracedTexture);
-    glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, raytracedTexture);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, width, height, 0, GL_RGBA, GL_FLOAT, NULL); // Correct initialization
-    glBindImageTexture(0, raytracedTexture, 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_RGBA32F); // Use WRITE_ONLY
+    // 2. Read pixels from the default framebuffer (the screen)
+    // The screen (window) framebuffer is always framebuffer 0.
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
 
-    raytracer.use();
-    raytracer.setInt("RayPerPixel", rpp);
-    raytracer.setInt("MaxRayBounce", mrb);
-    raytracer.setFloat3("ViewParams", camera.viewParams);
-    raytracer.setFloat3("ViewCenter", camera.center);
-    raytracer.setFloat44("View", camera.view);
-    raytracer.dispatch(ceil(width / 16.0), ceil(height / 16.0), 1, GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
+    // glReadPixels reads the color data (which is LDR: 0-255)
+    glReadPixels(0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, pixelData);
 
-    float* pixels = new float[width * height * 4];
-    unsigned char* pixelsData = new unsigned char[width * height * 4];
+    // 3. PNG Writing setup
+    // OpenGL's (0,0) is bottom-left, while image file formats are top-left.
+    // We tell stbi_write_png to flip the image vertically to correct the orientation.
+    stbi_flip_vertically_on_write(1);
 
-    glBindTexture(GL_TEXTURE_2D, raytracedTexture);
-    // Read float data into the float buffer
-    glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_FLOAT, pixels);
+    // 4. Write the PNG
+    int success = stbi_write_png(outputName.c_str(), width, height, channels, pixelData, width * channels);
 
-    // Correctly convert float data to unsigned char
-    for (int i = 0; i < width * height * 4; ++i) {
-        float clamped = std::clamp(pixels[i], 0.0f, 1.0f);
-        pixelsData[i] = static_cast<unsigned char>(clamped * 255.0f);
+    // 5. Reset flip state
+    stbi_flip_vertically_on_write(0);
+
+    if (success) {
+        printf("Screenshot taken successfully. Result in %s\n", outputName.c_str());
+    }
+    else {
+        printf("Failed to write screenshot.\n");
     }
 
-    std::string outName = outputName + ".png";
-
-    stbi_write_png(outName.c_str(), width, height, 4, pixelsData, width * 4);
-
-    delete[] pixels;
-    delete[] pixelsData;
-    glDeleteTextures(1, &raytracedTexture);
+    // 6. Clean up
+    delete[] pixelData;
 }
+
 
 
 
