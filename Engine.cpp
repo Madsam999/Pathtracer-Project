@@ -46,7 +46,7 @@ Engine::Engine(std::string name, int width, int height)
     : width(width), height(height),
       camera(60.0f, glm::vec3(0, 0, 0), width, height, glm::vec3(0.0f, 0.0f, -1.0f), glm::vec3(0.0f, 1.0f, 0.0f)),
       scene(1, 2, &camera) {
-    std::cout << "Creating window: " << title << std::endl;
+    std::cout << "Creating window: " << name << std::endl;
     std::cout << "Width: " << width << std::endl;
     std::cout << "Height: " << height << std::endl;
     if (!glfwInit()) {
@@ -56,7 +56,7 @@ Engine::Engine(std::string name, int width, int height)
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
 
-    window = glfwCreateWindow(width, height, title.c_str(), NULL, NULL);
+    window = glfwCreateWindow(width, height, name.c_str(), NULL, NULL);
 
     glfwMakeContextCurrent(window);
 
@@ -78,6 +78,8 @@ Engine::~Engine() {
 }
 
 void Engine::run() {
+
+    CameraController camController(camera, 0.05, 0.1);
 
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
@@ -205,6 +207,8 @@ void Engine::run() {
             resetNeeded = false;
         }
 
+        camController.handleInputEvent(window);
+
         frame++;
 
         raytracer.use();
@@ -238,14 +242,22 @@ void Engine::run() {
         if (ImGui::SliderInt("Mrb", &mrb, 1, 1000)) {resetNeeded = true;}
         ImGui::ColorEdit3("color", glm::value_ptr(RedSphereColor));
         ImGui::ColorEdit3("light", glm::value_ptr(LightColor));
-        ImGui::SliderFloat("Cam x", &camera.center.x, -100, 100);
-        ImGui::SliderFloat("Cam y", &camera.center.y, -100, 100);
-        ImGui::SliderFloat("Cam z", &camera.center.z, -100, 100);
-        ImGui::SliderFloat("Cam FOV", &camera.fov, 0, 360);
-        ImGui::SliderFloat("Cam look x", &camera.lookAt.x, -10, 10);
-        ImGui::SliderFloat("Cam look y", &camera.lookAt.y, -10, 10);
-        ImGui::SliderFloat("Cam look z", &camera.lookAt.z, -10, 10);
         if (ImGui::Checkbox("DarkMode", &DarkMode)) {resetNeeded = true;}
+        ImGui::End();
+
+        ImGui::Begin("Camera info");
+        ImGui::Text("Position");
+        ImGui::Text("x: %f", camera.center.x);
+        ImGui::Text("y: %f", camera.center.y);
+        ImGui::Text("z: %f", camera.center.z);
+        ImGui::Text("Front");
+        ImGui::Text("x: %f", camera.front.x);
+        ImGui::Text("y: %f", camera.front.y);
+        ImGui::Text("z: %f", camera.front.z);
+        ImGui::Text("Up");
+        ImGui::Text("x: %f", camera.up.x);
+        ImGui::Text("y: %f", camera.up.y);
+        ImGui::Text("z: %f", camera.up.z);
         ImGui::End();
 
         ImGui::Render();
@@ -287,7 +299,7 @@ void Engine::RenderSingleFrame(int width, int height, int rpp, int mrb, std::str
     raytracer.setInt("RayPerPixel", rpp);
     raytracer.setInt("MaxRayBounce", mrb);
     raytracer.setFloat3("ViewParams", camera.viewParams);
-    raytracer.setFloat3("ViewCenter", camera.get_center());
+    raytracer.setFloat3("ViewCenter", camera.center);
     raytracer.setFloat44("View", camera.view);
     raytracer.dispatch(ceil(width / 16.0), ceil(height / 16.0), 1, GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
 

@@ -36,6 +36,8 @@ add_executable(Pathtracer_Project main.cpp
         ImGui/imgui_impl_opengl3.cpp
         ImGui/imgui_tables.cpp
         ImGui/imgui_widgets.cpp
+        CameraController.cpp
+        CameraController.h
 )
 
 find_package(glm CONFIG REQUIRED)

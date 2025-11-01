@@ -9,15 +9,19 @@
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
 #include "stb_image_write.h"
+#include <string>
 
 #include "Shader.h"
 #include "ComputeShader.h"
 #include "Scene.h"
+#include "CameraController.h"
 
 enum ComputeType {
     RAYTRACING = 0,
     ACCUMULATE = 1
 };
+
+
 
 class Engine {
 public:

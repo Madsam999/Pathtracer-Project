@@ -21,34 +21,6 @@ glm::vec3 generateRandomOffset() {
     return offset;
 }
 
-std::vector<glm::vec3> Scene::render() const {
-    std::vector<glm::vec3> result;
-    int width = camera->get_image_width();
-    int height = camera->get_image_height();
-    for (int y = 0; y < height; y++) {
-        std::cout << "Scanline: " << y << std::endl;
-        for (int x = 0; x < width; x++) {
-            glm::vec3 avgColor(0, 0, 0);
-            for (int rpp = 0; rpp < ray_per_pixel; rpp++) {
-                // Get ray orig and dir
-                glm::vec3 offset = generateRandomOffset();
-                auto pixel_center = camera->get_pixel00_location()
-                                             + ((float(x) + offset.x) * camera->get_pixelDelta_u())
-                                             + ((float(y) + offset.y) * camera->get_pixelDelta_v());
-                auto rayDir = pixel_center - camera->get_center();
-                rayDir = glm::normalize(rayDir);
-                Ray ray(camera->get_center(), rayDir);
-
-                avgColor += trace(ray);
-            }
-            avgColor /= ray_per_pixel;
-            avgColor = glm::clamp(avgColor, 0.0f, 1.0f);
-
-            result.push_back(avgColor);
-        }
-    }
-    return result;
-}
 
 std::vector<glm::vec3> Scene::renderTest() const {
     std::vector<glm::vec3> result;
@@ -77,7 +49,7 @@ std::vector<glm::vec3> Scene::renderTest() const {
                 glm::vec3 rayDir = glm::vec3(camera->view * glm::vec4(viewPointLocal, 0.0f));
 
                 // The ray's origin is the camera's world-space position
-                glm::vec3 rayOrig = camera->get_center();
+                glm::vec3 rayOrig = camera->center;;
 
                 rayDir = glm::normalize(rayDir);
                 Ray ray(rayOrig, rayDir);
