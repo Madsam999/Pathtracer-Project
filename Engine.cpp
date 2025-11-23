@@ -21,27 +21,6 @@ void resetAccumulation(unsigned int textureID) {
     glClearTexImage(textureID, 0, GL_RGBA, GL_FLOAT, &zero);
 }
 
-struct Mat {
-    alignas(16) glm::vec3 color;
-    float padding1;
-    alignas(16)glm::vec3 emissionColor;
-    float emissionStrength;
-    float specular;
-    float padding2[2];
-};
-
-struct SphereStruct {
-    alignas(16) glm::vec3 center;
-    float radius;
-    Mat mat;
-};
-
-struct SphereBuffer {
-    int numSpheres;
-    SphereStruct* spheres;
-};
-
-
 Engine::Engine(std::string name, int width, int height)
     : width(width), height(height),
       camera(60.0f, glm::vec3(0, 0, 0), width, height, glm::vec3(0.0f, 0.0f, -1.0f), glm::vec3(0.0f, 1.0f, 0.0f)),
@@ -145,46 +124,7 @@ void Engine::run() {
     glBindTexture(GL_TEXTURE_2D, raytracedTexture);
     shader.setInt("tex", 0);
 
-    std::vector<Sphere> sceneSpheres = scene.getSpheres();
-    std::vector<SphereStruct> spheres;
-
-    for (int i = 0; i < sceneSpheres.size(); i++) {
-        Sphere sphere = sceneSpheres[i];
-        Material material = sphere.get_material();
-        SphereStruct sphereData;
-        sphereData.center = sphere.get_center();
-        sphereData.radius = sphere.get_radius();
-        Mat matData;
-        matData.color = material.getColor();
-        matData.emissionColor = material.getEmissionColor();
-        matData.emissionStrength = material.getEmissionStrength();
-        matData.specular = material.getSpecular();
-        sphereData.mat = matData;
-
-        spheres.push_back(sphereData);
-    }
-
-    int numSpheres = spheres.size();
-    std::cout << "Number of spheres: " << numSpheres << std::endl;
-    size_t header_size = 16;  // 4 (int) + 12 padding to align spheres[] to 16
-    size_t sphere_data_size = sizeof(SphereStruct) * spheres.size();
-    std::vector<char> ssbo_data(header_size + sphere_data_size);
-
-    // write count
-    std::memcpy(ssbo_data.data(), &numSpheres, sizeof(int));
-
-    // zero the padding (optional but tidy)
-    std::memset(ssbo_data.data() + sizeof(int), 0, header_size - sizeof(int));
-
-    // write spheres starting at offset 16
-    std::memcpy(ssbo_data.data() + header_size, spheres.data(), sphere_data_size);
-
-    GLuint ssbo;
-    glGenBuffers(1, &ssbo);
-    glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssbo);
-    glBufferData(GL_SHADER_STORAGE_BUFFER, ssbo_data.size(), ssbo_data.data(), GL_STATIC_READ);
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, ssbo);
-    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+    createSSBO();
 
     int rpp = 5;
     int mrb = 5;
@@ -322,6 +262,143 @@ void Engine::RenderSingleFrame(std::string outputName, GLuint texture) {
     // 6. Clean up
     delete[] pixelData;
 }
+
+void Engine::createSSBO() {
+    sphereSSBO();
+    meshSSBO();
+}
+
+void Engine::sphereSSBO() {
+    std::vector<SphereObject> spheres = scene.getSpheres();
+    std::vector<SphereInfo> sphereInfos;
+
+    for (int i = 0; i < spheres.size(); i++) {
+        SphereObject sphere = spheres[i];
+        std::shared_ptr<Material> material = sphere.getMaterial();
+        SphereInfo sphereData;
+        sphereData.transform = sphere.getTransform();
+        sphereData.invTransorm = sphere.getInverseTransform();
+        MaterialInfo matData;
+        matData.color = glm::vec4(material->getColor(), 0);
+        matData.emissionColor = glm::vec4(material->getEmissionColor(), 0);
+        matData.emissionStrength = material->getEmissionStrength();
+        matData.specular = material->getSpecular();
+        sphereData.mat = matData;
+
+        sphereInfos.push_back(sphereData);
+    }
+
+    int numSpheres = sphereInfos.size();
+    size_t sphere_header_size = 16;
+    size_t sphere_data_size = sizeof(SphereInfo) * sphereInfos.size();
+    std::vector<char> sphere_ssbo_data(sphere_header_size + sphere_data_size);
+    std::memcpy(sphere_ssbo_data.data(), &numSpheres, sizeof(int));
+    std::memset(sphere_ssbo_data.data() + sizeof(int), 0, sphere_header_size - sizeof(int));
+    std::memcpy(sphere_ssbo_data.data() + sphere_header_size, sphereInfos.data(), sphere_data_size);
+    GLuint ssbo_spheres;
+    glGenBuffers(1, &ssbo_spheres);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssbo_spheres);
+    glBufferData(GL_SHADER_STORAGE_BUFFER, sphere_ssbo_data.size(), sphere_ssbo_data.data(), GL_STATIC_READ);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, ssbo_spheres); // BINDING POINT 1
+}
+
+
+void Engine::meshSSBO() {
+    std::vector<MeshObject> meshes = scene.getMeshes();
+    std::vector<TriangleInfo> triangles;
+    std::vector<MeshInfo> meshInfos;
+    unsigned int currentTriangleOffset = 0;
+
+    for (int i = 0; i < meshes[0].getMesh()->getTriangles().size(); i++) {
+        auto triangle = meshes[0].getMesh()->getTriangles()[i];
+        std::cout << "Triangle: " << i << std::endl;
+        std::cout << "Positions: " << std::endl;
+        printf("(%f, %f, %f)\n", triangle.positionA.x, triangle.positionA.y, triangle.positionA.z);
+        printf("(%f, %f, %f)\n", triangle.positionB.x, triangle.positionB.y, triangle.positionB.z);
+        printf("(%f, %f, %f)\n", triangle.positionC.x, triangle.positionC.y, triangle.positionC.z);
+        printf("Normals: \n");
+        printf("(%f, %f, %f)\n", triangle.normalA.x, triangle.normalA.y, triangle.normalA.z);
+        printf("(%f, %f, %f)\n", triangle.normalB.x, triangle.normalB.y, triangle.normalB.z);
+        printf("(%f, %f, %f)\n", triangle.normalC.x, triangle.normalC.y, triangle.normalC.z);
+    }
+
+    for (const auto& meshObject : meshes) {
+        printf("Current triangle offset: %u\n", currentTriangleOffset);
+        auto mesh = meshObject.getMesh();
+        MeshInfo meshInfo;
+        meshInfo.transform = meshObject.getTransform();
+        meshInfo.invTransform = meshObject.getInverseTransform();
+        meshInfo.boundsMin = glm::vec4(mesh->getMin(), 1.f);
+        meshInfo.boundsMax = glm::vec4(mesh->getMax(), 1.f);
+        meshInfo.info = glm::uvec4((unsigned int)currentTriangleOffset, (unsigned int)mesh->getTriangles().size(), 0, 0);
+        std::shared_ptr<Material> meshObjectMat = meshObject.getMaterial();
+        MaterialInfo matData;
+        matData.color = glm::vec4(meshObjectMat->getColor(), 0);
+        matData.emissionColor = glm::vec4(meshObjectMat->getEmissionColor(), 0);
+        matData.emissionStrength = meshObjectMat->getEmissionStrength();
+        matData.specular = meshObjectMat->getSpecular();
+        meshInfo.material = matData;
+        meshInfos.push_back(meshInfo);
+        std::vector<Triangle> meshTriangles = mesh->getTriangles();
+        std:: cout << meshTriangles.size() << std::endl;
+        for (const auto& triangle : meshTriangles) {
+            TriangleInfo triangleData;
+            std::memcpy(&triangleData, &triangle, sizeof(TriangleInfo));
+            triangleData.positionA.w = 1.f;
+            triangleData.positionB.w = 1.f;
+            triangleData.positionC.w = 1.f;
+            triangleData.normalA.w = 0.f;
+            triangleData.normalB.w = 0.f;
+            triangleData.normalC.w = 0.f;
+            triangles.push_back(triangleData);
+        }
+        currentTriangleOffset +=  meshTriangles.size();
+        printf("Current triangle offset: %u\n", currentTriangleOffset);
+    }
+
+    for (int i = 0; i < triangles.size(); i++) {
+        auto triangle = triangles[i];
+        std::cout << "Triangle: " << i << std::endl;
+        std::cout << "Positions: " << std::endl;
+        printf("(%f, %f, %f)\n", triangle.positionA.x, triangle.positionA.y, triangle.positionA.z);
+        printf("(%f, %f, %f)\n", triangle.positionB.x, triangle.positionB.y, triangle.positionB.z);
+        printf("(%f, %f, %f)\n", triangle.positionC.x, triangle.positionC.y, triangle.positionC.z);
+        printf("Normals: \n");
+        printf("(%f, %f, %f)\n", triangle.normalA.x, triangle.normalA.y, triangle.normalA.z);
+        printf("(%f, %f, %f)\n", triangle.normalB.x, triangle.normalB.y, triangle.normalB.z);
+        printf("(%f, %f, %f)\n", triangle.normalC.x, triangle.normalC.y, triangle.normalC.z);
+    }
+
+    // Triangle SSBO Buffer
+    size_t triangle_header_size = 16;
+    size_t triangle_data_size = sizeof(TriangleInfo) * triangles.size();
+    std::vector<char> triangle_ssbo_data(triangle_header_size + triangle_data_size);
+    int numTriangles = triangles.size();
+    std::memcpy(triangle_ssbo_data.data(), &numTriangles, sizeof(int));
+    std::memset(triangle_ssbo_data.data() + sizeof(int), 0, triangle_header_size - sizeof(int));
+    std::memcpy(triangle_ssbo_data.data() + triangle_header_size, triangles.data(), triangle_data_size);
+    GLuint ssbo_triangles;
+    glGenBuffers(1, &ssbo_triangles);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssbo_triangles);
+    glBufferData(GL_SHADER_STORAGE_BUFFER, triangle_ssbo_data.size(), triangle_ssbo_data.data(), GL_STATIC_READ);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, ssbo_triangles);
+
+    // Mesh SSBO Buffer
+    size_t mesh_header_size = 16;
+    size_t mesh_data_size = sizeof(MeshInfo) * meshInfos.size();
+    std::vector<char> mesh_ssbo_data(mesh_header_size + mesh_data_size);
+    int numMeshes = meshInfos.size();
+    std::memcpy(mesh_ssbo_data.data(), &numMeshes, sizeof(int));
+    std::memset(mesh_ssbo_data.data() + sizeof(int), 0, mesh_header_size - sizeof(int));
+    std::memcpy(mesh_ssbo_data.data() + mesh_header_size, meshInfos.data(), mesh_data_size);
+    GLuint ssbo_meshes;
+    glGenBuffers(1, &ssbo_meshes);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssbo_meshes);
+    glBufferData(GL_SHADER_STORAGE_BUFFER, mesh_ssbo_data.size(), mesh_ssbo_data.data(), GL_STATIC_READ);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, ssbo_meshes);
+}
+
+
 
 
 

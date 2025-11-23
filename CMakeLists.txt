@@ -6,10 +6,6 @@ set(CMAKE_CXX_STANDARD 20)
 file(GLOB IMGUR_SOURCES "imgui/*.cpp")
 
 add_executable(Pathtracer_Project main.cpp
-        Object.cpp
-        Object.h
-        Sphere.cpp
-        Sphere.h
         Material.cpp
         Material.h
         Ray.cpp
@@ -38,6 +34,16 @@ add_executable(Pathtracer_Project main.cpp
         ImGui/imgui_widgets.cpp
         CameraController.cpp
         CameraController.h
+        ObjectClasses/SceneObjects.cpp
+        ObjectClasses/SceneObjects.h
+        ObjectClasses/SphereObject.cpp
+        ObjectClasses/SphereObject.h
+        ObjectClasses/MeshObject.cpp
+        ObjectClasses/MeshObject.h
+        ObjectClasses/Mesh.cpp
+        ObjectClasses/Mesh.h
+        Utilities/MeshBuilder.cpp
+        Utilities/MeshBuilder.h
 )
 
 find_package(glm CONFIG REQUIRED)
@@ -48,4 +54,6 @@ find_package(glad CONFIG REQUIRED)
 target_link_libraries(Pathtracer_Project PRIVATE glad::glad)
 find_package(Stb REQUIRED)
 target_include_directories(Pathtracer_Project PRIVATE ${Stb_INCLUDE_DIR})
+find_package(assimp CONFIG REQUIRED)
+target_link_libraries(Pathtracer_Project PRIVATE assimp::assimp)
 

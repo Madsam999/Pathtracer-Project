@@ -24,7 +24,7 @@ public:
         auto angleRad = fov * M_PI / 180.0f;
         aspect_ratio = (float)image_width / (float)image_height;
 
-        view = glm::inverse(glm::lookAt(center, lookAt, up));
+        view = glm::inverse(glm::lookAt(center, lookAt, worldUp));
 
         float planeHeight = focal_length * tan(angleRad / 2) * 2;
         float planeWidth = planeHeight * aspect_ratio;

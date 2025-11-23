@@ -5,22 +5,18 @@
 #ifndef RAY_H
 #define RAY_H
 #include <float.h>
-#include <glm/vec3.hpp>
+#include <glm/glm.hpp>
+#include <memory>
 
 #include "Material.h"
 
 struct HitInfo {
     bool hit;
     float hitDist;
+    glm::vec3 hitPosition;
     glm::vec3 normal;
-    Material material;
-
-    HitInfo() {
-        hit = false;
-        hitDist = FLT_MAX;
-        normal = glm::vec3(0.0f);
-        material = Material();
-    }
+    glm::vec2 texCoords;
+    std::shared_ptr<Material> material;
 };
 
 class Ray {
