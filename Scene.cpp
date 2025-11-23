@@ -4,8 +4,59 @@
 
 #include "Scene.h"
 #include <random>
+#include <iostream>
 
 #include <glm/gtc/matrix_transform.hpp>
+
+#include "Utilities/MeshBuilder.h"
+
+Scene::Scene(int ray_per_pixel, int max_ray_bounce, Camera *camera) : camera(camera), ray_per_pixel(ray_per_pixel), max_ray_bounce(max_ray_bounce) {
+    buildDefaultScene();
+}
+
+void Scene::buildDefaultScene() {
+    // 1. Create Materials (as shared resources)
+    auto red_mat = std::make_shared<Material>(glm::vec3(1.0f, 0.7f, 0.0f), glm::vec3(0.0f), 0.0f, 0.0f);
+    auto green_mat = std::make_shared<Material>(glm::vec3(0.0f, 1.0f, 0.0f), glm::vec3(0.0f), 0.0f, 0.0f);
+    auto blue_mat = std::make_shared<Material>(glm::vec3(0.0f, 0.0f, 1.0f), glm::vec3(0.0f), 0.0f, 0.356f);
+    auto light_mat = std::make_shared<Material>(glm::vec3(0.0f), glm::vec3(1.0f, 1.0f, 1.0f), 1.0f, 0.0f);
+/*
+    spheres.emplace_back(
+        0.5f,
+        glm::vec3(0.0f, -0.25f, -1.5f),
+        glm::vec3(0.0f, 0.0f, 0.0f),
+        glm::vec3(0.5f, 0.5f, 0.5f),
+        red_mat
+    );
+    spheres.emplace_back(
+        1.f,
+        glm::vec3(1.5f, 0.0f, -1.0f),
+        glm::vec3(0.0f, 0.0f, 0.0f),
+        glm::vec3(1.0f, 1.0f, 1.0f),
+        green_mat
+    );
+    */
+
+    spheres.emplace_back(
+        5.f,
+        glm::vec3(0.0f, 6.0f, 0.0f),
+        glm::vec3(0.0f, 0.0f, 0.0f),
+        glm::vec3(1.0f, 1.0f, 1.0f),
+        light_mat
+    );
+
+    std::shared_ptr<Mesh> mesh;
+    mesh = MeshBuilder::getMesh("Assets/Meshes/sphere.obj");
+
+    meshes.emplace_back(
+        glm::vec3(0.0f, 1.5, 0.0f),
+        glm::vec3(0.0f, 0.0f, 0.0f),
+        glm::vec3(1.0f, 1.0f, 1.0f),
+        blue_mat
+    );
+    meshes[0].setMesh(mesh);
+
+}
 
 glm::vec3 colorPixel(Ray ray) {
     glm::vec3 unitDir = glm::normalize(ray.direction());
@@ -69,28 +120,33 @@ glm::vec3 Scene::trace(Ray& ray) const {
     glm::vec3 finalColor = glm::vec3(0, 0, 0);
     glm::vec3 rayColor = glm::vec3(1.0f, 1.0f, 1.0f);
     for (int mrb = 0 ; mrb < max_ray_bounce; mrb++) {
-        HitInfo hit = intersect(ray);
+        HitInfo hit = intersectScene(ray);
         if (!hit.hit) {
             //finalColor += colorPixel(ray) * rayColor;
             break;
         }
-        glm::vec3 newPos = ray.at(hit.hitDist);
+        glm::vec3 newPos = ray.at(hit.hitDist) + (float)0.000001 * hit.normal;
         glm::vec3 newDir = glm::normalize(hit.normal + random_unit_vector());
 
-        glm::vec3 emittedLight = hit.material.getEmissionColor() * hit.material.getEmissionStrength();
+        glm::vec3 emittedLight = hit.material->getEmissionColor() * hit.material->getEmissionStrength();
         //float lightStrength = glm::dot(hit.normal, ray.direction());
         finalColor += emittedLight * rayColor;
-        rayColor *= hit.material.getColor();
+        rayColor *= hit.material->getColor();
         ray.setDirection(newDir);
         ray.setOrigin(newPos);
     }
     return glm::clamp(finalColor, 0.0f, 1.0f);
 }
 
-HitInfo Scene::intersect(Ray& ray) const {
+HitInfo Scene::intersectScene(Ray& ray) const {
     HitInfo bestHit;
-    for (const auto& object : objects) {
-        object->intersect(ray, bestHit);
+    bestHit.hit = false;
+    bestHit.hitDist = std::numeric_limits<float>::max();
+    for (const auto& sphere : spheres) {
+        sphere.intersect(ray, bestHit);
+    }
+    for (const auto& mesh : meshes) {
+        mesh.intersect(ray, bestHit);
     }
     return bestHit;
 }

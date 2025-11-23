@@ -8,7 +8,8 @@ layout(rgba32f, binding = 1) uniform image2D image_out;
 uniform int frameCnt;
 
 const float PI = 3.1415926535897932384626433832795;
-const float EPSILON = 0.00001;
+// Increased EPSILON slightly for more robust surface offset
+const float EPSILON = 0.001;
 const int MAX_UINT = 4294967295;
 
 uniform int RayPerPixel;
@@ -21,15 +22,29 @@ uniform vec3 LightColor;
 uniform bool DarkMode;
 
 struct Material {
-    vec3 color;
-    vec3 emissionColor;
+    vec4 color;
+    vec4 emissionColor;
     float emissionStrength;
     float specular;
 };
 
-struct Sphere {
-    vec3 center;
-    float radius;
+// --- SPHERE Structure (SSBO binding 1) ---
+struct SphereStruct {
+    mat4 transform; // Model matrix (Local to World)
+    mat4 invTransform; // Inverse Model matrix (World to Local)
+    Material mat;
+};
+
+struct Triangle {
+    vec4 raw_data[6];
+};
+
+struct MeshInfo {
+    mat4 transform;
+    mat4 invTransform;
+    vec4 boundsMin;
+    vec4 boundsMax;
+    uvec4 info;
     Material mat;
 };
 
@@ -46,13 +61,21 @@ struct HitInfo {
     Material mat;
 };
 
+// SSBO 1: Spheres
 layout(std430, binding = 1) buffer sphereBuffer {
     int numSpheres;
-    Sphere spheres[];
+    SphereStruct spheres[];
 };
 
-// Source of the code:
-// https://blog.demofox.org/2020/05/25/casual-shadertoy-path-tracing-1-basic-camera-diffuse-emissive/
+layout(std430, binding = 2) buffer triangleBuffer {
+    int numTriangles;
+    Triangle triangles[];
+};
+
+layout(std430, binding = 3) buffer meshBuffer {
+    int numMeshes;
+    MeshInfo meshes[];
+};
 
 uint wang_hash(inout uint seed)
 {
@@ -81,9 +104,9 @@ vec3 RandomUnitVector(inout uint state)
 
 Material createMaterial(vec3 color, vec3 emissionColor, float emissionStrength, float specular) {
     Material mat;
-    mat.color = color;
+    mat.color = vec4(color, 0);
     mat.emissionStrength = emissionStrength;
-    mat.emissionColor = emissionColor;
+    mat.emissionColor = vec4(emissionColor, 0);
     mat.specular = specular;
     return mat;
 }
@@ -106,33 +129,132 @@ HitInfo createHitInfo() {
 vec3 colorPixel(Ray ray) {
     vec3 unitDir = normalize(ray.direction);
     float a = 0.5 * (unitDir.y + 1);
-    return (1 - a) * vec3(1, 1, 1) + a * vec3(0.5f, 0.7f, 1.0f);
+    return (1.0 - a) * vec3(1.0, 1.0, 1.0) + a * vec3(0.5f, 0.7f, 1.0f);
 }
 
-void intersectSphere(Ray ray, inout HitInfo hit, Sphere sphere) {
-    vec3 oc = sphere.center - ray.origin;
+void intersectSphereLocal(Ray ray, inout HitInfo hit, Material mat) {
+    vec3 oc = ray.origin; // Sphere center is (0,0,0) in Local Space
     float a = dot(ray.direction, ray.direction);
-    float b = -2 * dot(ray.direction, oc);
-    float c = dot(oc, oc) - (sphere.radius * sphere.radius);
-    float disc = b * b - 4 * a * c;
-    if(disc >= 0) {
-        float t = (-b - sqrt(disc)) / (2 * a);
+    float b = 2.0 * dot(ray.direction, oc);
+    float c = dot(oc, oc) - 1.0; // Radius is 1.0
+
+    float disc = b * b - 4.0 * a * c;
+
+    if (disc >= 0.0) {
+        float t = (-b - sqrt(disc)) / (2.0 * a);
+
         vec3 pos = ray.origin + ray.direction * t;
-        vec3 normal = normalize(pos - sphere.center);
-        if(t > 0 && t < hit.distance) {
+        vec3 normal = normalize(pos);
+
+        if(t > 0) {
             hit.distance = t;
             hit.hasHit = true;
-            hit.mat = sphere.mat;
             hit.normal = normal;
+            hit.mat = mat;
         }
     }
+}
+
+void intersectTriangleLocal(Ray ray, inout HitInfo localHit, Triangle triangle, Material mat) {
+    vec3 A = triangle.raw_data[0].xyz;
+    vec3 B = triangle.raw_data[1].xyz;
+    vec3 C = triangle.raw_data[2].xyz;
+
+    // 1. Calculate edges
+    vec3 E1 = B - A; // Edge 1
+    vec3 E2 = C - A; // Edge 2
+
+    // 2. Begin calculating determinant - D x E2
+    vec3 P = cross(ray.direction, E2);
+    float det = dot(E1, P);
+
+    // 3. Check for parallel ray (determinant close to zero)
+    if (abs(det) < 0.000001) return;
+
+    float invDet = 1.0 / det;
+
+    // 4. Calculate T vector (distance from A to ray origin)
+    vec3 T = ray.origin - A;
+
+    // 5. Calculate U parameter and check bounds
+    float u = dot(T, P) * invDet;
+    if (u < 0.0 || u > 1.0) return;
+
+    // 6. Calculate Q vector
+    vec3 Q = cross(T, E1);
+
+    // 7. Calculate V parameter and check bounds
+    float v = dot(ray.direction, Q) * invDet;
+    if (v < 0.0 || u + v > 1.0) return; // Standard Moller-Trumbore second check
+
+    // 8. Calculate T parameter (distance along the ray)
+    float dst = dot(E2, Q) * invDet;
+
+    // 9. Check if triangle is behind the ray origin or too close
+    if (dst < EPSILON) return; // Use the global EPSILON
+
+    // Success: Found a valid hit
+    localHit.hasHit = true;
+    localHit.distance = dst;
+    localHit.mat = mat;
+
+    // 10. Interpolate Normal
+    float w = 1.0 - u - v; // Barycentric weight
+    vec3 norm1 = triangle.raw_data[3].xyz;
+    vec3 norm2 = triangle.raw_data[4].xyz;
+    vec3 norm3 = triangle.raw_data[5].xyz;
+    localHit.normal = normalize(w * norm1 + u * norm2 + v * norm3);
 }
 
 HitInfo intersect(Ray ray) {
     HitInfo bestHit = createHitInfo();
 
+    // 1. Sphere Intersections (LS - Ray already transformed)
     for(int i = 0; i < numSpheres; i++) {
-        intersectSphere(ray, bestHit, spheres[i]);
+        SphereStruct sphere = spheres[i];
+
+        // Transform ray from World Space to Sphere Local Space
+
+        vec3 localOrigin = vec3(sphere.invTransform * vec4(ray.origin, 1));
+        vec3 localDirection = vec3(sphere.invTransform * vec4(ray.direction, 0));
+        Ray localRay = createRay(localDirection, localOrigin);
+
+        // Perform intersection against the canonical unit sphere
+        HitInfo localSphereHit = createHitInfo();
+        intersectSphereLocal(localRay, localSphereHit, sphere.mat);
+
+        if (localSphereHit.hasHit && localSphereHit.distance < bestHit.distance) {
+            bestHit.distance = localSphereHit.distance;
+            bestHit.mat = localSphereHit.mat;
+            mat3 normalTransform = transpose(mat3(sphere.invTransform));
+            bestHit.normal = normalize(normalTransform * localSphereHit.normal);
+            bestHit.hasHit = localSphereHit.hasHit;
+        }
+    }
+
+    for(int i = 0; i < numMeshes; i++) {
+        MeshInfo mesh = meshes[i];
+
+        uint firstTriangle = mesh.info.x;
+        uint trianglesInMesh = mesh.info.y;
+
+        vec3 localOrigin = vec3(mesh.invTransform * vec4(ray.origin, 1));
+        vec3 localDirection = vec3(mesh.invTransform * vec4(ray.direction, 0));
+        Ray localRay = createRay(localDirection, localOrigin);
+
+        for(uint j = firstTriangle; j < firstTriangle + trianglesInMesh; j++) {
+            Triangle triangle = triangles[j];
+
+            HitInfo localTriangleHit = createHitInfo();
+            intersectTriangleLocal(localRay, localTriangleHit, triangle, mesh.mat);
+            if(localTriangleHit.hasHit && localTriangleHit.distance < bestHit.distance) {
+                bestHit.distance = localTriangleHit.distance;
+                bestHit.mat = localTriangleHit.mat;
+                mat3 normalTransform = transpose(mat3(mesh.invTransform));
+                bestHit.normal = normalize(normalTransform * localTriangleHit.normal);
+                bestHit.hasHit = localTriangleHit.hasHit;
+            }
+        }
     }
 
     return bestHit;
@@ -158,17 +280,21 @@ vec3 trace(Ray ray, inout uint seed) {
             }
         }
 
-        vec3 emittedLight = hit.mat.emissionColor * hit.mat.emissionStrength;
+        vec3 emittedLight = hit.mat.emissionColor.xyz * hit.mat.emissionStrength;
         finalColor += emittedLight * rayColor;
-        rayColor *= hit.mat.color;
+        rayColor *= hit.mat.color.xyz;
 
-        vec3 newPos = ray.origin + ray.direction * hit.distance;
+        // Ensure new ray starts slightly outside the surface
+        vec3 newPos = (ray.origin + ray.direction * hit.distance) + hit.normal * 0.000001f;
+
+        // Offset origin along the World Space normal
+        ray.origin = newPos + hit.normal * EPSILON;
+
+        // Calculate new direction
         vec3 diffuseDir = normalize(hit.normal + RandomUnitVector(seed));
         vec3 specularDir = normalize(reflect(ray.direction, hit.normal));
         vec3 newDir = normalize(mix(diffuseDir, specularDir, hit.mat.specular));
 
-        // Update the ray's origin and direction to continue the path
-        ray.origin = newPos + hit.normal * EPSILON;
         ray.direction = newDir;
     }
 
@@ -191,7 +317,7 @@ void main() {
         vec2 uv = vec2((pixelCoords.x + randomX) / image_size.x - 0.5f, (pixelCoords.y + randomY) / image_size.y - 0.5f);
 
         vec3 viewPointLocal = vec3(uv.x, -uv.y, -1) * ViewParams;
-        vec3 rayDir = vec3(View * vec4(viewPointLocal, 0.0f));
+        vec3 rayDir = normalize(vec3(View * vec4(viewPointLocal, 0.0f)));
 
         Ray ray = createRay(rayDir, ViewCenter);
 

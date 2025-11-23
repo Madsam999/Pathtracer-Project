@@ -11,7 +11,6 @@
 #include "glm/glm.hpp"
 #include <GLFW/glfw3.h>
 
-#include "Sphere.h"
 #include "Ray.h"
 #include "ComputeShader.h"
 #include "Shader.h"
@@ -22,6 +21,8 @@
 #include "algorithm"
 #include "Engine.h"
 #include "Scene.h"
+#include "iostream"
+
 
 struct RayTracerSettings {
     int maxRayBounce;
@@ -107,8 +108,8 @@ int main() {
     int height = 1080;
     int numSamples = 1;
 
-    Camera camera(60.0f, glm::vec3(0, 0, 0), width, height, glm::vec3(0.0f, 0.0f, -1.0f), glm::vec3(0.0f, 1.0f, 0.0f));
-    Scene scene(1, 2, &camera);
+    Camera camera(60.0f, glm::vec3(-8, -0, -1), width, height, glm::vec3(-0.78f, -1.f, -0.01f), glm::vec3(0.0f, 1.0f, 0.0f));
+    Scene scene(5, 10, &camera);
 
     Engine engine("Hello World", width, height);
 
@@ -116,9 +117,9 @@ int main() {
     engine.createShaderProgram("Shaders/test_vert.vert", "Shaders/test_frag.frag");
 
     engine.run();
-
-    //std::vector<glm::vec3> image = scene.renderTest();
-    //convertDataToPPM("renderTest.ppm", width, height, image);
-
+/*
+    std::vector<glm::vec3> image = scene.renderTest();
+    convertDataToPPM("renderTest.ppm", width, height, image);
+*/
     return 0;
 }
