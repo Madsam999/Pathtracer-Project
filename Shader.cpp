@@ -46,3 +46,4 @@ GLuint Shader::compileShader(GLenum shaderType, std::string& source) {
 void Shader::setInt(std::string name, int value) {
     glUniform1i(glGetUniformLocation(program, name.c_str()), value);
 }
+

@@ -36,40 +36,49 @@ void CameraController::handleInputEvent(GLFWwindow *window) {
         }
     }
 
-    double mouseX, mouseY;
-    glfwGetCursorPos(window, &mouseX, &mouseY);
-    handleMouseMove(static_cast<float>(mouseX), static_cast<float>(mouseY));
+    if (cursorDisabled) {
+        double mouseX, mouseY;
+        glfwGetCursorPos(window, &mouseX, &mouseY);
+        handleMouseMove(static_cast<float>(mouseX), static_cast<float>(mouseY));
+    }
 }
 
 void CameraController::handleKeyboardInput(int key) {
     glm::vec3 direction;
+    glm::vec3 camCenter = camera.center1();
+
+    glm::vec3 up = camera.up1();
+    glm::vec3 right = camera.right1();
+    glm::vec3 front = camera.front1();
     switch(key) {
         case UP:
-            direction = camera.up;
-            camera.center += direction * speed;
+            direction = up;
+            camCenter += direction * speed;
             break;
         case DOWN:
-            direction = -camera.up;
-            camera.center += direction * speed;
+            direction = -up;
+            camCenter += direction * speed;
             break;
         case LEFT:
-            direction = -camera.right;
-            camera.center += direction * speed;
+            direction = -right;
+            camCenter += direction * speed;
             break;
         case RIGHT:
-            direction = camera.right;
-            camera.center += direction * speed;
+            direction = right;
+            camCenter += direction * speed;
             break;
         case FORWARD:
-            direction = camera.front;
-            camera.center += direction * speed;
+            direction = front;
+            camCenter += direction * speed;
             break;
         case BACKWARD:
-            direction = -camera.front;
-            camera.center += direction * speed;
+            direction = -front;
+            camCenter += direction * speed;
             break;
     };
-    camera.update();
+
+    camera.set_center(camCenter);
+    camera.needsUpdate();
 }
 
 void CameraController::handleMouseMove(float mouseX, float mouseY) {
@@ -99,9 +108,12 @@ void CameraController::handleMouseMove(float mouseX, float mouseY) {
     direction.y = sin(glm::radians(pitch));
     direction.z = sin(glm::radians(yaw)) * cos(glm::radians(pitch));
 
-    camera.front = direction;
-    camera.right = glm::normalize(glm::cross(camera.front, camera.worldUp));
-    camera.up = glm::normalize(glm::cross(camera.right, camera.front));
+    glm::vec3 front = direction;
+    glm::vec3 right = glm::normalize(glm::cross(front, camera.world_up()));
+    glm::vec3 up = glm::normalize(glm::cross(right, front));
 
-    camera.update();
+    camera.set_front(front);
+    camera.set_right(right);
+    camera.set_up(up);
+    camera.needsUpdate();
 }
