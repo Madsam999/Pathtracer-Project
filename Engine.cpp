@@ -24,7 +24,7 @@ void resetAccumulation(unsigned int textureID) {
 Engine::Engine(std::string name, int width, int height)
     : width(width), height(height),
       camera(60.0f, glm::vec3(0, 0, 0), width, height, glm::vec3(0.0f, 0.0f, -1.0f), glm::vec3(0.0f, 1.0f, 0.0f)),
-      scene(1, 2, &camera) {
+      scene(1, 2, &camera), denoiser(width, height), cameraController(camera, 0.05, 0.1) {
     std::cout << "Creating window: " << name << std::endl;
     std::cout << "Width: " << width << std::endl;
     std::cout << "Height: " << height << std::endl;
@@ -46,6 +46,16 @@ Engine::Engine(std::string name, int width, int height)
     glViewport(0, 0, width, height);
 
     glfwSetFramebufferSizeCallback(window, framebuffer_size_callback);
+
+    scene.buildDefaultScene();
+    debugMode = DebugMode::ACCUMULATION_TEXTURE;
+    denoiser.initializeRessources();
+
+    frame = 0;
+    currentFrameIndex = 0;
+    historyFrameIndex = 1;
+    textureToDisplay = 0;
+    currentDebugMode = 0;
 }
 
 Engine::~Engine() {
@@ -57,9 +67,6 @@ Engine::~Engine() {
 }
 
 void Engine::run() {
-
-    CameraController camController(camera, 0.05, 0.1);
-
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     ImGuiIO &io = ImGui::GetIO();
@@ -67,14 +74,13 @@ void Engine::run() {
     ImGui_ImplGlfw_InitForOpenGL(window, true);
     ImGui_ImplOpenGL3_Init("#version 430");
     // Quad Vertices
-    static float quadVerts[] = {
+    float quadVerts[] = {
         // positions       // texture Coords
         -1.0f, 1.0f, 0.0f, 0.0f, 0.0f,
         -1.0f, -1.0f, 0.0f, 0.0f, 1.0f,
         1.0f, 1.0f, 0.0f, 1.0f, 0.0f,
         1.0f, -1.0f, 0.0f, 1.0f, 1.0f,
     };
-
     // Setup VAO and VBO for Quad
     unsigned int quadVAO, quadVBO;
     glGenVertexArrays(1, &quadVAO);
@@ -133,93 +139,53 @@ void Engine::run() {
     bool DarkMode = false;
     bool sunset = false;
 
-    int frame = 0;
     bool resetNeeded = false;
 
-    int screenShots = 0;
-    std::string outputName = "Single_Frame";
 
     while (!glfwWindowShouldClose(window)) {
+        // --- 1. SETUP & INPUT HANDLING ---
 
-        if (camera.hasChanged() || resetNeeded) {
-            frame = 0;
-            resetAccumulation(accumulationTexture);
-            camera.resetChange();
-            resetNeeded = false;
-        }
-
-        camController.handleInputEvent(window);
-        if (glfwGetKey(window, GLFW_KEY_ENTER) == GLFW_PRESS) {
-            RenderSingleFrame(outputName + std::to_string(screenShots) + ".png", raytracedTexture);
-            screenShots++;
-            printf("Rendered single frame");
-        }
-
+        // Process input, update camera if necessary, and handle single frame renders.
+        HandleInputAndCameraUpdates();
 
         frame++;
 
-        raytracer.use();
+        // Start ImGui frame and clear background.
+        BeginFrame();
 
-        raytracer.setInt("frameCnt", frame);
-        raytracer.setInt("RayPerPixel", rpp);
-        raytracer.setInt("MaxRayBounce", mrb);
-        raytracer.setFloat3("ViewParams", camera.viewParams);
-        raytracer.setFloat3("ViewCenter", camera.center);
-        raytracer.setFloat44("View", camera.view);
-        raytracer.setFloat3("RedSphereColor", RedSphereColor);
-        raytracer.setFloat3("LightColor", LightColor);
-        raytracer.setBool("DarkMode", DarkMode);
+        // --- 2. RAY TRACING PASS (G-Buffer Generation) ---
 
-        raytracer.dispatch(ceil(width / 16.0), ceil(height / 16.0), 1, GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
+        // Dispatch Ray Tracer and write G-Buffers (Color, Depth, MV, etc.).
+        RaytracePass();
 
-        glClear(GL_COLOR_BUFFER_BIT);
-        ImGui_ImplOpenGL3_NewFrame();
-        ImGui_ImplGlfw_NewFrame();
-        ImGui::NewFrame();
+        // --- 3. TEMPORAL DENOISING PASSES ---
 
+        // Handle the first frame initialization of history buffers.
+        ColdStart();
 
-        shader.use();
-        glBindVertexArray(quadVAO);
-        glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
-        glBindVertexArray(0);
+        // Accumulate the current noisy frame with history using the Motion Vector.
+        AccumulationPass();
 
-        ImGui::Begin("Settings");
-        ImGui::Text("FPS: %.1f", ImGui::GetIO().Framerate);
-        if (ImGui::SliderInt("RPP", &rpp, 1, 1000)) {resetNeeded = true;}
-        if (ImGui::SliderInt("Mrb", &mrb, 1, 1000)) {resetNeeded = true;}
-        ImGui::ColorEdit3("color", glm::value_ptr(RedSphereColor));
-        ImGui::ColorEdit3("light", glm::value_ptr(LightColor));
-        if (ImGui::Checkbox("DarkMode", &DarkMode)) {resetNeeded = true;}
-        ImGui::End();
+        // --- 4. DEBUG AND SCREEN DISPLAY ---
 
-        ImGui::Begin("Camera info");
-        ImGui::Text("Position");
-        ImGui::Text("x: %f", camera.center.x);
-        ImGui::Text("y: %f", camera.center.y);
-        ImGui::Text("z: %f", camera.center.z);
-        ImGui::Text("Front");
-        ImGui::Text("x: %f", camera.front.x);
-        ImGui::Text("y: %f", camera.front.y);
-        ImGui::Text("z: %f", camera.front.z);
-        ImGui::Text("Up");
-        ImGui::Text("x: %f", camera.up.x);
-        ImGui::Text("y: %f", camera.up.y);
-        ImGui::Text("z: %f", camera.up.z);
-        ImGui::End();
+        // Select the appropriate texture (Noisy, MV, Denoised) based on the debug mode.
+        SelectDebugTexture();
 
-        ImGui::Render();
-        ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+        // Draw the selected texture to the screen (Full-Screen Quad).
+        DisplayToScreen(quadVAO, quadVBO);
 
-        camera.update();
-        glfwSwapBuffers(window);
-        glfwPollEvents();
+        // --- 5. UI & FINAL SWAP ---
+
+        // Render all ImGui windows and draw the UI.
+        RenderGUI();
+
+        // Swap buffers and prepare for the next frame.
+        FinalizeFrame();
     }
 }
 
 void Engine::createComputeShader(std::string shaderName) {
-
     raytracer = ComputeShader(shaderName.c_str());
-
 }
 
 void Engine::createShaderProgram(std::string vertexShaderName, std::string fragmentShaderName) {
@@ -284,6 +250,7 @@ void Engine::sphereSSBO() {
         matData.emissionStrength = material->getEmissionStrength();
         matData.specular = material->getSpecular();
         sphereData.mat = matData;
+        sphereData.objectID = glm::uvec4(sphere.getObjectID(), 0, 0, 1);
 
         sphereInfos.push_back(sphereData);
     }
@@ -309,21 +276,7 @@ void Engine::meshSSBO() {
     std::vector<MeshInfo> meshInfos;
     unsigned int currentTriangleOffset = 0;
 
-    for (int i = 0; i < meshes[0].getMesh()->getTriangles().size(); i++) {
-        auto triangle = meshes[0].getMesh()->getTriangles()[i];
-        std::cout << "Triangle: " << i << std::endl;
-        std::cout << "Positions: " << std::endl;
-        printf("(%f, %f, %f)\n", triangle.positionA.x, triangle.positionA.y, triangle.positionA.z);
-        printf("(%f, %f, %f)\n", triangle.positionB.x, triangle.positionB.y, triangle.positionB.z);
-        printf("(%f, %f, %f)\n", triangle.positionC.x, triangle.positionC.y, triangle.positionC.z);
-        printf("Normals: \n");
-        printf("(%f, %f, %f)\n", triangle.normalA.x, triangle.normalA.y, triangle.normalA.z);
-        printf("(%f, %f, %f)\n", triangle.normalB.x, triangle.normalB.y, triangle.normalB.z);
-        printf("(%f, %f, %f)\n", triangle.normalC.x, triangle.normalC.y, triangle.normalC.z);
-    }
-
     for (const auto& meshObject : meshes) {
-        printf("Current triangle offset: %u\n", currentTriangleOffset);
         auto mesh = meshObject.getMesh();
         MeshInfo meshInfo;
         meshInfo.transform = meshObject.getTransform();
@@ -338,6 +291,7 @@ void Engine::meshSSBO() {
         matData.emissionStrength = meshObjectMat->getEmissionStrength();
         matData.specular = meshObjectMat->getSpecular();
         meshInfo.material = matData;
+        meshInfo.objectID = glm::uvec4(meshObject.getObjectID(), 0, 0, 0);
         meshInfos.push_back(meshInfo);
         std::vector<Triangle> meshTriangles = mesh->getTriangles();
         std:: cout << meshTriangles.size() << std::endl;
@@ -353,20 +307,6 @@ void Engine::meshSSBO() {
             triangles.push_back(triangleData);
         }
         currentTriangleOffset +=  meshTriangles.size();
-        printf("Current triangle offset: %u\n", currentTriangleOffset);
-    }
-
-    for (int i = 0; i < triangles.size(); i++) {
-        auto triangle = triangles[i];
-        std::cout << "Triangle: " << i << std::endl;
-        std::cout << "Positions: " << std::endl;
-        printf("(%f, %f, %f)\n", triangle.positionA.x, triangle.positionA.y, triangle.positionA.z);
-        printf("(%f, %f, %f)\n", triangle.positionB.x, triangle.positionB.y, triangle.positionB.z);
-        printf("(%f, %f, %f)\n", triangle.positionC.x, triangle.positionC.y, triangle.positionC.z);
-        printf("Normals: \n");
-        printf("(%f, %f, %f)\n", triangle.normalA.x, triangle.normalA.y, triangle.normalA.z);
-        printf("(%f, %f, %f)\n", triangle.normalB.x, triangle.normalB.y, triangle.normalB.z);
-        printf("(%f, %f, %f)\n", triangle.normalC.x, triangle.normalC.y, triangle.normalC.z);
     }
 
     // Triangle SSBO Buffer
@@ -396,6 +336,192 @@ void Engine::meshSSBO() {
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssbo_meshes);
     glBufferData(GL_SHADER_STORAGE_BUFFER, mesh_ssbo_data.size(), mesh_ssbo_data.data(), GL_STATIC_READ);
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, ssbo_meshes);
+}
+
+void Engine::HandleInputAndCameraUpdates() {
+    // A. Camera Logic (Only update on change)
+    if (camera.checkFlag()) {
+        camera.update();
+        camera.resetFlag();
+    }
+
+    // B. Input Events (Handles key/mouse events)
+    cameraController.handleInputEvent(window);
+/*
+    // C. Single Frame Render
+    if (glfwGetKey(window, GLFW_KEY_ENTER) == GLFW_PRESS) {
+        RenderSingleFrame(outputName + std::to_string(screenShots++) + ".png", raytracedTexture);
+        screenShots++;
+        printf("Rendered single frame\n");
+    }
+*/
+}
+
+void Engine::RaytracePass() {
+    // --- Uniform Setup (Including CRITICAL MV Fix) ---
+    raytracer.use();
+
+    // Simplified Matrix Calculation (for local use)
+    glm::mat4 currentVP = camera.view_projection();
+
+    // Standard Uniforms
+    raytracer.setInt("frameCnt", frame);
+    raytracer.setInt("RayPerPixel", scene.ray_per_pixel1());
+    raytracer.setInt("MaxRayBounce", scene.max_ray_bounce1());
+    raytracer.setFloat3("ViewCenter", camera.center1());
+    // ... other constants (LightColor, DarkMode, etc.)
+
+    // Matrix Uniforms
+    raytracer.setFloat44("InverseProjection", camera.inverse_projection());
+    raytracer.setFloat44("CameraToWorld", camera.camera_to_world());
+    raytracer.setFloat44("CurrentVP", currentVP);
+
+    // **CRITICAL: STATIC MV SYNCHRONIZATION**
+    if (!camera.checkFlag()) {
+        // If camera is static, force PrevVP to be identical to CurrentVP
+        raytracer.setFloat44("PrevVP", currentVP);
+    } else {
+        raytracer.setFloat44("PrevVP", camera.previous_view_projection());
+    }
+
+    // --- Dispatch ---
+    denoiser.bindTexture(currentFrameIndex);
+    raytracer.dispatch(ceil(width / 16.0), ceil(height / 16.0), 1, GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
+}
+
+void Engine::AccumulationPass() {
+    // Ensure history G-buffers are ready for sampling (if applicable)
+    // Note: If you are ping-ponging G-buffers, this step is handled by index swapping.
+
+    denoiser.accumulationPass(currentFrameIndex, historyFrameIndex, frame);
+    glMemoryBarrier(GL_ALL_BARRIER_BITS);
+}
+
+void Engine::ColdStart() {
+    if (frame <= 1) { // Use frame <= 1 to ensure it runs on the first frame (frame 1)
+        denoiser.copyNoisyToHistory(currentFrameIndex);
+        denoiser.initializeMoments(currentFrameIndex);
+    }
+    glMemoryBarrier(GL_ALL_BARRIER_BITS);
+}
+
+void Engine::FinalizeFrame() {
+    // ImGui Finish
+    ImGui::Render();
+    ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+
+    // 1. Swap Buffers
+    glfwSwapBuffers(window);
+    glfwPollEvents();
+
+    // 2. CRITICAL: History Management (VP and Indices)
+
+    // B. Ping-Pong Buffers (Swap indices for the next frame)
+    int temp = currentFrameIndex;
+    currentFrameIndex = historyFrameIndex;
+    historyFrameIndex = temp;
+}
+
+void Engine::SelectDebugTexture() {
+    // Determine which texture and debug mode index to use
+    switch (debugMode) {
+        case DebugMode::NOISY_TEXTURE:
+            currentDebugMode = 0;
+            textureToDisplay = denoiser.getNoisyTexture();
+            break;
+        case DebugMode::DEPTH_TEXTURE:
+            currentDebugMode = 1;
+            textureToDisplay = denoiser.getDepthTexture(currentFrameIndex);
+            break;
+        case DebugMode::NORMAL_TEXTURE:
+            currentDebugMode = 2;
+            textureToDisplay = denoiser.getNormalTexture(currentFrameIndex);
+            break;
+        case DebugMode::MOTION_TEXTURE:
+            currentDebugMode = 3;
+            textureToDisplay = denoiser.getMotionVectorTexture();
+            break;
+        case DebugMode::ACCUMULATION_TEXTURE:
+            currentDebugMode = 4;
+            textureToDisplay = denoiser.getDenoisedTexture(currentFrameIndex);
+            break;
+        case DebugMode::MESH_ID_TEXTURE:
+            currentDebugMode = 5;
+            textureToDisplay = denoiser.getMeshIdTexture();
+            break;
+    }
+}
+
+void Engine::DisplayToScreen(unsigned int quadVAO, unsigned int quadVBO) {
+    shader.use();
+
+    glActiveTexture(GL_TEXTURE0);
+
+    // Bind the selected texture and set the uniform based on texture type
+    if (currentDebugMode == (int)DebugMode::MESH_ID_TEXTURE) {
+        // Handle R32UI texture for Mesh ID
+        glBindTexture(GL_TEXTURE_2D, textureToDisplay);
+        glUniform1i(glGetUniformLocation(shader.getProgram(), "u_MeshDebugTexture"), 0);
+    }
+    else {
+        // Handle standard color/float textures
+        glBindTexture(GL_TEXTURE_2D, textureToDisplay);
+        glUniform1i(glGetUniformLocation(shader.getProgram(), "u_DebugTexture"), 0);
+    }
+
+    shader.setInt("u_debugMode", currentDebugMode);
+
+    // Draw the full-screen quad
+    glBindVertexArray(quadVAO);
+    glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+    glBindVertexArray(0);
+}
+
+void Engine::RenderGUI() {
+    // --- 1. Settings Window ---
+    ImGui::Begin("Settings");
+    ImGui::Text("FPS: %.1f", ImGui::GetIO().Framerate);
+    // Setting these flags can trigger a reset in the denoising/raytracing
+    ImGui::End();
+
+    // --- 2. Camera Info Window ---
+    ImGui::Begin("Camera info");
+    ImGui::Text("Position");
+    ImGui::Text("x: %f", camera.center1().x);
+    ImGui::Text("y: %f", camera.center1().y);
+    ImGui::Text("z: %f", camera.center1().z);
+    // ... (rest of camera info)
+    ImGui::End();
+
+    // --- 3. Debug Mode Window ---
+    ImGui::Begin("Debug Mode");
+    ImGui::Text("Debug Mode");
+    // Cast the enum pointer to int* for ImGui's widget
+    int* currentDebugModePtr = reinterpret_cast<int*>(&debugMode);
+
+    // Display radio buttons for texture selection
+    ImGui::RadioButton("Noisy Color", currentDebugModePtr, (int)DebugMode::NOISY_TEXTURE);
+    ImGui::RadioButton("Depth (G-Buffer)", currentDebugModePtr, (int)DebugMode::DEPTH_TEXTURE);
+    ImGui::RadioButton("Normals (G-Buffer)", currentDebugModePtr, (int)DebugMode::NORMAL_TEXTURE);
+    ImGui::RadioButton("Motion Vector (G-Buffer)", currentDebugModePtr, (int)DebugMode::MOTION_TEXTURE);
+    ImGui::RadioButton("Denoised Texture", currentDebugModePtr, (int)DebugMode::ACCUMULATION_TEXTURE);
+    ImGui::RadioButton("MeshID Texture", currentDebugModePtr, (int)DebugMode::MESH_ID_TEXTURE);
+    ImGui::Separator();
+    ImGui::End();
+
+    // --- Final Render ---
+    ImGui::Render();
+    ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+}
+
+void Engine::BeginFrame() {
+    glClear(GL_COLOR_BUFFER_BIT);
+
+    ImGui_ImplOpenGL3_NewFrame();
+
+    ImGui_ImplGlfw_NewFrame();
+
+    ImGui::NewFrame();
 }
 
 

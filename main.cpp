@@ -113,8 +113,8 @@ int main() {
 
     Engine engine("Hello World", width, height);
 
-    engine.createComputeShader("Shaders/test_shader.comp.glsl");
-    engine.createShaderProgram("Shaders/test_vert.vert", "Shaders/test_frag.frag");
+    engine.createComputeShader("Shaders/raytrace.comp.glsl");
+    engine.createShaderProgram("Shaders/test_vert.vert", "Shaders/debugShader.frag");
 
     engine.run();
 /*

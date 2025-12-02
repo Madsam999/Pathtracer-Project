@@ -5,25 +5,15 @@
 #include "Camera.h"
 
 void Camera::update() {
-    glm::mat4 newView = glm::inverse(glm::lookAt(center, center + front, up));
-    auto angleRad = fov * M_PI / 180.0f;
-    float planeHeight = focal_length * tan(angleRad / 2) * 2;
-    float planeWidth = planeHeight * aspect_ratio;
+    glm::mat4 OldCameraToWorld = CameraToWorld;
+    glm::mat4 OldViewProjection = ViewProjection;
 
-    glm::vec3 newViewParams = glm::vec3(planeWidth, planeHeight, focal_length);
+    WorldToCamera = glm::lookAt(center, center + front, up);
+    CameraToWorld = glm::inverse(WorldToCamera);
 
-    if (!glm::all(glm::equal(newView, view, 0.0001f)) || !glm::all(glm::equal(newViewParams, viewParams, 0.0001f))) {
-        hasBeenUpdated = true;
-    }
+    PreviousCameraToWorld = OldCameraToWorld;
 
-    view = newView;
-    viewParams = newViewParams;
-}
+    ViewProjection = CameraToWorld * Projection;
 
-bool Camera::hasChanged() {
-    return hasBeenUpdated;
-}
-
-void Camera::resetChange() {
-    hasBeenUpdated = false;
+    PreviousViewProjection = OldViewProjection;
 }

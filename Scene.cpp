@@ -11,16 +11,15 @@
 #include "Utilities/MeshBuilder.h"
 
 Scene::Scene(int ray_per_pixel, int max_ray_bounce, Camera *camera) : camera(camera), ray_per_pixel(ray_per_pixel), max_ray_bounce(max_ray_bounce) {
-    buildDefaultScene();
 }
 
 void Scene::buildDefaultScene() {
     // 1. Create Materials (as shared resources)
     auto red_mat = std::make_shared<Material>(glm::vec3(1.0f, 0.7f, 0.0f), glm::vec3(0.0f), 0.0f, 0.0f);
     auto green_mat = std::make_shared<Material>(glm::vec3(0.0f, 1.0f, 0.0f), glm::vec3(0.0f), 0.0f, 0.0f);
-    auto blue_mat = std::make_shared<Material>(glm::vec3(0.0f, 0.0f, 1.0f), glm::vec3(0.0f), 0.0f, 0.356f);
-    auto light_mat = std::make_shared<Material>(glm::vec3(0.0f), glm::vec3(1.0f, 1.0f, 1.0f), 1.0f, 0.0f);
-/*
+    auto blue_mat = std::make_shared<Material>(glm::vec3(0.0f, 0.0f, 1.0f), glm::vec3(0.0f), 0.0f, 0.3);
+    auto light_mat = std::make_shared<Material>(glm::vec3(0.0f), glm::vec3(1.0f, 1.0f, 1.0f), 10.0f, 0.0f);
+
     spheres.emplace_back(
         0.5f,
         glm::vec3(0.0f, -0.25f, -1.5f),
@@ -35,7 +34,7 @@ void Scene::buildDefaultScene() {
         glm::vec3(1.0f, 1.0f, 1.0f),
         green_mat
     );
-    */
+
 
     spheres.emplace_back(
         5.f,
@@ -44,18 +43,25 @@ void Scene::buildDefaultScene() {
         glm::vec3(1.0f, 1.0f, 1.0f),
         light_mat
     );
-
+/*
     std::shared_ptr<Mesh> mesh;
     mesh = MeshBuilder::getMesh("Assets/Meshes/sphere.obj");
 
     meshes.emplace_back(
-        glm::vec3(0.0f, 1.5, 0.0f),
+        glm::vec3(0.0f, -20.5, 0.0f),
         glm::vec3(0.0f, 0.0f, 0.0f),
-        glm::vec3(1.0f, 1.0f, 1.0f),
+        glm::vec3(20.0f, 20.0f, 20.0f),
         blue_mat
     );
     meshes[0].setMesh(mesh);
-
+    */
+    spheres.emplace_back(
+        1,
+        glm::vec3(0.0f, -20.5, 0.0f),
+        glm::vec3(0.0f, 0.0f, 0.0f),
+        glm::vec3(20.0f, 20.0f, 20.0f),
+        blue_mat
+    );
 }
 
 glm::vec3 colorPixel(Ray ray) {
@@ -86,21 +92,21 @@ std::vector<glm::vec3> Scene::renderTest() const {
                 // Use a random offset for antialiasing
                 glm::vec2 offset = glm::vec2(generateRandomOffset().x, generateRandomOffset().y);
 
-                // 1. Get UV coordinates (-0.5 to 0.5)
-                glm::vec2 uv = glm::vec2(
-                    (static_cast<float>(x) + offset.x) / width - 0.5f,
-                    (static_cast<float>(y) + offset.y) / height - 0.5f
-                );
+                glm::vec2 screenPos01 = (glm::vec2(x, y) + offset) / glm::vec2(width, height);
 
-                // 2. Scale by viewport dimensions
-                // viewportWidth = viewParams.x, viewportHeight = viewParams.y, focalLength = viewParams.z
-                glm::vec3 viewPointLocal = glm::vec3(uv.x, -uv.y, -1) * camera->viewParams;
+                glm::vec4 clipPos = glm::vec4(screenPos01 * 2.f - 1.f, 1.f, 1.f);
+                glm::vec4 viewPos = camera->inverse_projection() * glm::vec4(clipPos.x, clipPos.y, -1, 1);
 
-                // 3. Transform local direction to world space
-                glm::vec3 rayDir = glm::vec3(camera->view * glm::vec4(viewPointLocal, 0.0f));
+                viewPos.x /= viewPos.w;
+                viewPos.y /= viewPos.w;
+                viewPos.z /= viewPos.w;
+
+                glm::vec3 viewDirWorld = glm::vec3(camera->camera_to_world() * viewPos);
+
+                glm::vec3 rayDir = glm::normalize(viewDirWorld - camera->center1());
 
                 // The ray's origin is the camera's world-space position
-                glm::vec3 rayOrig = camera->center;;
+                glm::vec3 rayOrig = camera->center1();;
 
                 rayDir = glm::normalize(rayDir);
                 Ray ray(rayOrig, rayDir);

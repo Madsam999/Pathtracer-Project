@@ -2,8 +2,11 @@
 
 layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
 
-layout(rgba32f, binding = 0) uniform image2D accumulatioBuffer;
-layout(rgba32f, binding = 1) uniform image2D image_out;
+layout(rgba32f, binding = 0) uniform image2D noisyImage;
+layout(r32f, binding = 1) uniform image2D depthImage;
+layout(rgba32f, binding = 2) uniform image2D normalImage;
+layout(r32ui, binding = 3) uniform uimage2D meshIDImage;
+layout(rg16f, binding = 4) uniform image2D motionVectorImage;
 
 uniform int frameCnt;
 
@@ -11,12 +14,18 @@ const float PI = 3.1415926535897932384626433832795;
 // Increased EPSILON slightly for more robust surface offset
 const float EPSILON = 0.001;
 const int MAX_UINT = 4294967295;
+const uint BACKGROUND_ID = 4000000000u;
 
 uniform int RayPerPixel;
 uniform int MaxRayBounce;
-uniform vec3 ViewParams;
-uniform mat4 View;
+
+uniform mat4 InverseProjection;
+uniform mat4 CameraToWorld;
+uniform mat4 PrevVP;
+uniform mat4 CurrentVP;
+
 uniform vec3 ViewCenter;
+
 uniform vec3 RedSphereColor;
 uniform vec3 LightColor;
 uniform bool DarkMode;
@@ -33,6 +42,7 @@ struct SphereStruct {
     mat4 transform; // Model matrix (Local to World)
     mat4 invTransform; // Inverse Model matrix (World to Local)
     Material mat;
+    uvec4 objectID;
 };
 
 struct Triangle {
@@ -47,6 +57,7 @@ struct MeshInfo {
     vec4 boundsMax;
     uvec4 info;
     Material mat;
+    uvec4 objectID;
 };
 
 struct Ray {
@@ -60,6 +71,7 @@ struct HitInfo {
     vec4 color;
     vec3 normal;
     Material mat;
+    uint objectID;
 };
 
 // SSBO 1: Spheres
@@ -124,6 +136,7 @@ HitInfo createHitInfo() {
     info.hasHit = false;
     info.distance = 100000;
     info.color = vec4(0, 0, 0, 1);
+    info.objectID = -1;
     return info;
 }
 
@@ -133,7 +146,7 @@ vec3 colorPixel(Ray ray) {
     return (1.0 - a) * vec3(1.0, 1.0, 1.0) + a * vec3(0.5f, 0.7f, 1.0f);
 }
 
-void intersectSphereLocal(Ray ray, inout HitInfo hit, Material mat) {
+void intersectSphereLocal(Ray ray, inout HitInfo hit, Material mat, uint objectID) {
     vec3 oc = ray.origin; // Sphere center is (0,0,0) in Local Space
     float a = dot(ray.direction, ray.direction);
     float b = 2.0 * dot(ray.direction, oc);
@@ -152,6 +165,7 @@ void intersectSphereLocal(Ray ray, inout HitInfo hit, Material mat) {
             hit.hasHit = true;
             hit.normal = normal;
             hit.mat = mat;
+            hit.objectID = objectID;
         }
     }
 }
@@ -168,7 +182,7 @@ bool intersectAABB(Ray ray, vec3 minBound, vec3 maxBound) {
     return tNear <= tFar;
 }
 
-void intersectTriangleLocal(Ray ray, inout HitInfo localHit, Triangle triangle, Material mat) {
+void intersectTriangleLocal(Ray ray, inout HitInfo localHit, Triangle triangle, Material mat, uint objectID) {
     vec3 A = triangle.positionA.xyz;
     vec3 B = triangle.positionB.xyz;
     vec3 C = triangle.positionC.xyz;
@@ -210,6 +224,7 @@ void intersectTriangleLocal(Ray ray, inout HitInfo localHit, Triangle triangle, 
     localHit.hasHit = true;
     localHit.distance = dst;
     localHit.mat = mat;
+    localHit.objectID = objectID;
 
     // 10. Interpolate Normal
     float w = 1.0 - u - v; // Barycentric weight
@@ -234,7 +249,7 @@ HitInfo intersect(Ray ray) {
 
         // Perform intersection against the canonical unit sphere
         HitInfo localSphereHit = createHitInfo();
-        intersectSphereLocal(localRay, localSphereHit, sphere.mat);
+        intersectSphereLocal(localRay, localSphereHit, sphere.mat, sphere.objectID.x);
 
         if (localSphereHit.hasHit && localSphereHit.distance < bestHit.distance) {
             bestHit.distance = localSphereHit.distance;
@@ -266,7 +281,7 @@ HitInfo intersect(Ray ray) {
             Triangle triangle = triangles[j];
 
             HitInfo localTriangleHit = createHitInfo();
-            intersectTriangleLocal(localRay, localTriangleHit, triangle, mesh.mat);
+            intersectTriangleLocal(localRay, localTriangleHit, triangle, mesh.mat, mesh.objectID.x);
             if(localTriangleHit.hasHit && localTriangleHit.distance < bestHit.distance) {
                 bestHit.distance = localTriangleHit.distance;
                 bestHit.mat = localTriangleHit.mat;
@@ -280,80 +295,100 @@ HitInfo intersect(Ray ray) {
     return bestHit;
 }
 
-
-
-vec3 trace(Ray ray, inout uint seed) {
-    vec3 finalColor = vec3(0, 0, 0);
-    vec3 rayColor = vec3(1, 1, 1);
-
-    for(int mrb = 0; mrb < MaxRayBounce; mrb++) {
-        HitInfo hit = intersect(ray);
-
-        // Correctly handle the case where the ray misses an object
-        if(!hit.hasHit) {
-            if(DarkMode) {
-                break;
-            }
-            else {
-                finalColor += colorPixel(ray) * rayColor;
-                break;
-            }
-        }
-
-        vec3 emittedLight = hit.mat.emissionColor.xyz * hit.mat.emissionStrength;
-        finalColor += emittedLight * rayColor;
-        rayColor *= hit.mat.color.xyz;
-
-        // Ensure new ray starts slightly outside the surface
-        vec3 newPos = (ray.origin + ray.direction * hit.distance) + hit.normal * 0.000001f;
-
-        // Offset origin along the World Space normal
-        ray.origin = newPos + hit.normal * EPSILON;
-
-        // Calculate new direction
-        vec3 diffuseDir = normalize(hit.normal + RandomUnitVector(seed));
-        vec3 specularDir = normalize(reflect(ray.direction, hit.normal));
-        vec3 newDir = normalize(mix(diffuseDir, specularDir, hit.mat.specular));
-
-        ray.direction = newDir;
-    }
-
-    return finalColor;
-}
-
 void main() {
     ivec2 pixelCoords = ivec2(gl_GlobalInvocationID.xy);
-    ivec2 image_size = imageSize(image_out);
+    ivec2 image_size = imageSize(noisyImage);
 
     uint rngState = uint(uint(pixelCoords.x) * uint(1973) + uint(pixelCoords.y) * uint(9277)) | uint(1);
     rngState += uint(frameCnt);
 
-    vec3 avgColor = vec3(0, 0, 0);
-    for(int rpp = 0; rpp < RayPerPixel; rpp++) {
-        uint sample_seed = rngState + rpp; // A simple way to get a different seed for each sample
+    uint sample_seed = rngState; // A simple way to get a different seed for each sample
 
-        float randomX = RandomFloat01(rngState);
-        float randomY = RandomFloat01(rngState);
-        vec2 uv = vec2((pixelCoords.x + randomX) / image_size.x - 0.5f, (pixelCoords.y + randomY) / image_size.y - 0.5f);
+    float randomX = RandomFloat01(rngState);
+    float randomY = RandomFloat01(rngState);
 
-        vec3 viewPointLocal = vec3(uv.x, -uv.y, -1) * ViewParams;
-        vec3 rayDir = normalize(vec3(View * vec4(viewPointLocal, 0.0f)));
+    vec2 screenPos01 = (vec2(pixelCoords) + vec2(randomX, randomY)) / vec2(image_size);
 
-        Ray ray = createRay(rayDir, ViewCenter);
+    vec4 clipPos = vec4(screenPos01 * 2 - 1, 1, 1);
 
-        avgColor += trace(ray, rngState);
+    vec4 viewPos = InverseProjection * vec4(clipPos.xy, -1, 1);
+    viewPos.xyz /= viewPos.w;
+
+    vec3 rayDir = normalize(vec3(CameraToWorld * vec4(viewPos.xyz, 0.f)));
+
+    Ray ray = createRay(rayDir, ViewCenter);
+
+    HitInfo primaryHit = createHitInfo();
+    primaryHit = intersect(ray);
+
+    if(primaryHit.hasHit) {
+        imageStore(depthImage, pixelCoords, vec4(primaryHit.distance, 0, 0, 1));
+        imageStore(normalImage, pixelCoords, vec4(primaryHit.normal, 1.f));
+        imageStore(meshIDImage, pixelCoords, uvec4(primaryHit.objectID, 0, 0, 0));
+
+        vec3 hitPosition = ray.origin + ray.direction * primaryHit.distance;
+
+        vec4 prevClip = PrevVP * vec4(hitPosition, 1.f);
+
+        vec2 prevUV = (prevClip.xy / prevClip.w) * 0.5 + 0.5;
+
+        vec4 currClip = CurrentVP * vec4(hitPosition, 1.f);
+        vec2 currUV = (currClip.xy / currClip.w) * 0.5 + 0.5;
+
+        vec2 motionVector;
+        motionVector = currUV - prevUV;
+
+        imageStore(motionVectorImage, pixelCoords, vec4(motionVector, 0, 1));
     }
-    avgColor /= RayPerPixel;
+    else {
+        imageStore(depthImage, pixelCoords, vec4(100000.f, 0, 0, 1));
+        imageStore(normalImage, pixelCoords, vec4(0, 0, 0, 1));
+        imageStore(meshIDImage, pixelCoords, uvec4(BACKGROUND_ID, 0, 0, 0));
+        imageStore(motionVectorImage, pixelCoords, vec4(0, 0, 0, 1));
+    }
 
-    vec4 oldAccumulatedColor = imageLoad(accumulatioBuffer, pixelCoords);
-    vec4 accumumulatedColor = oldAccumulatedColor + vec4(avgColor, 0);
+    vec3 finalColor = vec3(0, 0, 0);
+    vec3 rayColor = vec3(1, 1, 1);
 
-    imageStore(accumulatioBuffer, pixelCoords, accumumulatedColor);
+    if(primaryHit.hasHit) {
+        vec3 emittedLight = primaryHit.mat.emissionColor.xyz * primaryHit.mat.emissionStrength;
+        finalColor += emittedLight * rayColor;
+        rayColor *= primaryHit.mat.color.xyz;
 
-    float invFrameCnt = 1 / float(frameCnt);
-    vec4 finalNormalizedColor = accumumulatedColor * invFrameCnt;
+        vec3 newPos = (ray.origin + ray.direction * primaryHit.distance) + primaryHit.normal * 0.000001f;
+        ray.origin = newPos;
+        uint seed = rngState + frameCnt;
+        vec3 diffuseDir = normalize(primaryHit.normal + RandomUnitVector(seed));
+        vec3 specularDir = normalize(reflect(ray.direction, primaryHit.normal));
+        vec3 newDir = normalize(mix(diffuseDir, specularDir, primaryHit.mat.specular));
+        ray.direction = newDir;
 
-    vec4 finalColor = clamp(finalNormalizedColor, 0, 1);
+        for(int i = 1; i < MaxRayBounce; i++) {
+            HitInfo hit = intersect(ray);
 
-    imageStore(image_out, pixelCoords, finalColor);
+            if(!hit.hasHit) {
+                if(DarkMode) {
+                    break;
+                }
+                else {
+                    finalColor += colorPixel(ray) * rayColor;
+                    break;
+                }
+            }
+
+            vec3 emittedLight = hit.mat.emissionColor.xyz * hit.mat.emissionStrength;
+            finalColor += emittedLight * rayColor;
+            rayColor *= hit.mat.color.xyz;
+
+            vec3 newPos = (ray.origin + ray.direction * hit.distance) + hit.normal * 0.000001f;
+            ray.origin = newPos;
+            uint seed = rngState + frameCnt;
+            vec3 diffuseDir = normalize(hit.normal + RandomUnitVector(seed));
+            vec3 specularDir = normalize(reflect(ray.direction, hit.normal));
+            vec3 newDir = normalize(mix(diffuseDir, specularDir, hit.mat.specular));
+            ray.direction = newDir;
+        }
+    }
+
+    imageStore(noisyImage, pixelCoords, vec4(finalColor, 1));
 }

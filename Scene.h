@@ -33,6 +33,16 @@ public:
     [[nodiscard]] std::vector<MeshObject> getMeshes() const {
         return meshes;
     }
+
+    [[nodiscard]] int ray_per_pixel1() const {
+        return ray_per_pixel;
+    }
+
+    [[nodiscard]] int max_ray_bounce1() const {
+        return max_ray_bounce;
+    }
+
+    void buildDefaultScene();
 private:
     // std::vector<std::unique_ptr<Light>> lights;
     int ray_per_pixel;
@@ -42,8 +52,6 @@ private:
 
     std::vector<SphereObject> spheres;
     std::vector<MeshObject> meshes;
-
-    void buildDefaultScene();
 };
 
 
