@@ -18,19 +18,17 @@
 class Scene {
 public:
     Scene() {}
-    Scene(const Scene&) = delete;
-    Scene& operator=(const Scene&) = delete;
     Scene(int ray_per_pixel, int max_ray_bounce, Camera* camera);
     ~Scene() {}
-    std::vector<glm::vec3> render() const;
-    std::vector<glm::vec3> renderTest() const;
-    glm::vec3 trace(Ray& ray) const;
-    HitInfo intersectScene(Ray& ray) const;
+    std::vector<glm::vec3> render();
+    std::vector<glm::vec3> renderTest();
+    glm::vec3 trace(Ray& ray);
+    HitInfo intersectScene(Ray& ray);
 
-    [[nodiscard]] std::vector<SphereObject> getSpheres() const {
+    [[nodiscard]] std::vector<SphereObject>& getSpheres() {
         return spheres;
     }
-    [[nodiscard]] std::vector<MeshObject> getMeshes() const {
+    [[nodiscard]] std::vector<MeshObject>& getMeshes() {
         return meshes;
     }
 

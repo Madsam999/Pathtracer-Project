@@ -108,13 +108,18 @@ int main() {
     int height = 1080;
     int numSamples = 1;
 
-    Camera camera(60.0f, glm::vec3(-8, -0, -1), width, height, glm::vec3(-0.78f, -1.f, -0.01f), glm::vec3(0.0f, 1.0f, 0.0f));
+    float aspectRatio = (float)width / (float)height;
+
+    Camera camera(60.f, glm::vec3(-8, -0, -1), glm::vec3(-0.78f, -1.f, -0.01f), glm::vec3(0.0f, 1.0f, 0.0f), aspectRatio);
     Scene scene(5, 10, &camera);
+    scene.buildDefaultScene();
 
     Engine engine("Hello World", width, height);
 
     engine.createComputeShader("Shaders/raytrace.comp.glsl");
     engine.createShaderProgram("Shaders/test_vert.vert", "Shaders/debugShader.frag");
+    engine.bindScene(&scene);
+    engine.bindCamera(&camera);
 
     engine.run();
 /*

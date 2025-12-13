@@ -16,7 +16,7 @@ void main() {
     vec2 uv = gl_FragCoord.xy / vec2(textureSize(u_DebugTexture, 0));
     vec4 texel = texture(u_DebugTexture, uv);
 
-    uv.y = 1 - uv.y;
+    //uv.y = 1 - uv.y;
 
     if (u_DebugMode == 0) {
         // --- 0: Noisy Color ---
@@ -66,16 +66,16 @@ void main() {
         // 2. Map the motion vector from its normalized range (approx [-1, 1])
         // to the visible color range [0, 1].
         // Color = V * 0.5 + 0.5
-        vec2 colorVector = motionVector * 0.5 + 0.5;
+        vec2 colorVector = motionVector;
 
         // 3. Output the colorized vector. Use the X component for Red and Y for Green.
         // The Blue channel can be set to 0.5 (neutral) or 1.0.
         // Set Blue to 0.5 to keep the center color a neutral gray/green.
-        FragColor = vec4(colorVector.x, colorVector.y, 0.5, 1.0);
+        FragColor = vec4(colorVector.x, colorVector.y, 0, 1.0);
     }
     else if(u_DebugMode == 4) {
         // Sample the accumulated color (RGB) and the accumulation count (A)
-        vec2 flippedUV = vec2(uv.x, 1.0 - uv.y);
+        vec2 flippedUV = vec2(uv.x, uv.y);
 
         // Sample using the flipped UV
         vec4 accumulatedData = texture(u_DebugTexture, flippedUV);

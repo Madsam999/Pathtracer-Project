@@ -45,11 +45,11 @@ void CameraController::handleInputEvent(GLFWwindow *window) {
 
 void CameraController::handleKeyboardInput(int key) {
     glm::vec3 direction;
-    glm::vec3 camCenter = camera.center1();
+    glm::vec3 camCenter = camera.getPos();
 
-    glm::vec3 up = camera.up1();
-    glm::vec3 right = camera.right1();
-    glm::vec3 front = camera.front1();
+    glm::vec3 up = camera.getUp();
+    glm::vec3 right = camera.getRight();
+    glm::vec3 front = camera.getLookAt();
     switch(key) {
         case UP:
             direction = up;
@@ -77,8 +77,7 @@ void CameraController::handleKeyboardInput(int key) {
             break;
     };
 
-    camera.set_center(camCenter);
-    camera.needsUpdate();
+    camera.setPosition(camCenter);
 }
 
 void CameraController::handleMouseMove(float mouseX, float mouseY) {
@@ -109,11 +108,10 @@ void CameraController::handleMouseMove(float mouseX, float mouseY) {
     direction.z = sin(glm::radians(yaw)) * cos(glm::radians(pitch));
 
     glm::vec3 front = direction;
-    glm::vec3 right = glm::normalize(glm::cross(front, camera.world_up()));
+    glm::vec3 right = glm::normalize(glm::cross(front, camera.getWorldUp()));
     glm::vec3 up = glm::normalize(glm::cross(right, front));
 
-    camera.set_front(front);
-    camera.set_right(right);
-    camera.set_up(up);
-    camera.needsUpdate();
+    camera.setLookAt(front);
+    camera.setRight(right);
+    camera.setUp(up);
 }

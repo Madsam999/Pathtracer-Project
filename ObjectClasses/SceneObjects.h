@@ -31,14 +31,14 @@ public:
         return rotation;
     }
 
-    [[nodiscard]] glm::mat4 getTransform() const {
+    [[nodiscard]] glm::mat4 getTransform() {
         if (isDirty) {
             updateTransform();
             isDirty = false;
         }
         return transform;
     }
-    [[nodiscard]] glm::mat4 getInverseTransform() const {
+    [[nodiscard]] glm::mat4 getInverseTransform() {
         if (isDirty) {
             updateTransform();
             isDirty = false;
@@ -51,6 +51,20 @@ public:
             isDirty = false;
         }
         return normalTransform;
+    }
+    [[nodiscard]] glm::mat4 getPrevTransform() const {
+        if (isDirty) {
+            updateTransform();
+            isDirty = false;
+        }
+        return prevTransform;
+    }
+    [[nodiscard]] glm::mat4 getPrevInverseTransform() const {
+        if (isDirty) {
+            updateTransform();
+            isDirty = false;
+        }
+        return prevInverseTransform;
     }
 
     [[nodiscard]] std::shared_ptr<Material> getMaterial() const {
@@ -70,7 +84,7 @@ public:
         isDirty = true;
     }
 
-    void intersect(Ray& ray, HitInfo& hit_info) const;
+    void intersect(Ray& ray, HitInfo& hit_info);
     virtual void localIntersect(Ray& ray, HitInfo& hit_info) const = 0;
 private:
     static uint64_t nextID;
@@ -84,6 +98,8 @@ private:
     mutable glm::mat4 transform;
     mutable glm::mat4 inverseTransform;
     mutable glm::mat3 normalTransform;
+    mutable glm::mat4 prevTransform;
+    mutable glm::mat4 prevInverseTransform;
     mutable bool isDirty = false;
 
     void updateTransform() const;
@@ -106,7 +122,10 @@ protected:
         position(position),
         rotation(rotation),
         scale(scale),
-        inverseTransform(glm::inverse(transform)) {
+        inverseTransform(glm::inverse(transform)),
+        prevTransform(transform),
+        prevInverseTransform(glm::inverse(transform))
+    {
         // Empty Constructor
     }
 

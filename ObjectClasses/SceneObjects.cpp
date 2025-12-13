@@ -27,7 +27,9 @@ glm::mat4 SceneObject::createTransform(glm::vec3 position, glm::vec3 rotation, g
 }
 
 void SceneObject::updateTransform() const {
-    auto transform = glm::mat4(1.0f);
+    prevTransform = transform;
+    prevInverseTransform = inverseTransform;
+    transform = glm::mat4(1.0f);
     transform = glm::scale(transform, scale);
     transform = glm::rotate(transform, glm::radians(rotation.z), glm::vec3(0, 0, 1));
     transform = glm::rotate(transform, glm::radians(rotation.y), glm::vec3(0, 1, 0));
@@ -42,7 +44,7 @@ void SceneObject::buildNormalTransform() const{
 }
 
 
-void SceneObject::intersect(Ray &ray, HitInfo &hit_info) const {
+void SceneObject::intersect(Ray &ray, HitInfo &hit_info) {
     glm::vec3 localOrigin = getInverseTransform() * glm::vec4(ray.origin(), 1.0f);
     glm::vec3 localDirection = getInverseTransform() * glm::vec4(ray.direction(), 0.0f);
 

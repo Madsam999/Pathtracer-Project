@@ -1,148 +1,134 @@
 //
-// Created by Samuel on 2025-07-30.
+// Created by Samuel on 12/5/2025.
 //
-#pragma once
 
-#ifndef CAMERA_H
-#define CAMERA_H
+#ifndef CAMERA_CLEAN_H
+#define CAMERA_CLEAN_H
+#include <glm/glm.hpp>
 #include <glm/vec3.hpp>
+#include <glm/ext/matrix_transform.hpp>
 
-#include <cmath>
-#include <glm/fwd.hpp>
-#include <glm/geometric.hpp>
-#include <glm/gtc/matrix_transform.hpp>
-#include <glm/ext/matrix_relational.hpp>
 
 class Camera {
 public:
-    Camera() {}
+    Camera(
+        float fov,
+        glm::vec3 pos,
+        glm::vec3 lookAt,
+        glm::vec3 worldUp,
+        float aspectRatio
+    ) {
+        this->pos = pos;
+        this->front = lookAt;
+        this->camUp = worldUp;
+        this->worldUp = worldUp;
+        this->aspectRatio = aspectRatio;
+        this->fov = fov;
 
-    Camera(float fov, glm::vec3 center,
-           int image_width, int image_height, glm::vec3 lookAt, glm::vec3 worldUp) : fov(fov),center(center), image_width(image_width),
-                                                                                image_height(image_height), worldUp(worldUp) {
-        WorldToCamera = glm::lookAt(center, lookAt, worldUp);
-        CameraToWorld = glm::inverse(WorldToCamera);
-
-        Projection = glm::perspective(glm::radians(fov), static_cast<float>(image_width) / static_cast<float>(image_height), 0.1f, 100.0f);
-        InverseProjection = glm::inverse(Projection);
-
-        ViewProjection = Projection * CameraToWorld;
-        PreviousViewProjection = ViewProjection;
-
-        PreviousCameraToWorld = CameraToWorld;
-    };
-
-    int get_image_width() {
-        return image_width;
-    }
-    int get_image_height() {
-        return image_height;
+        initializeCamera();
     }
 
-    [[nodiscard]] glm::mat4 camera_to_world() const {
-        return CameraToWorld;
+    [[nodiscard]] glm::mat4 getProjection() {
+        if (isDirty) {
+            update();
+            isDirty = false;
+        }
+        return projection;
+    }
+    [[nodiscard]] glm::mat4 getInverseProjection() {
+        if (isDirty) {
+            update();
+            isDirty = false;
+        }
+        return inverseProjection;
+    }
+    [[nodiscard]] glm::mat4 getView() {
+        if (isDirty) {
+            update();
+            isDirty = false;
+        }
+        return worldToCamera;
+    }
+    [[nodiscard]] glm::mat4 getInverseView() {
+        if (isDirty) {
+            update();
+            isDirty = false;
+        }
+        return cameraToWorld;
+    }
+    [[nodiscard]] glm::mat4 getViewProjection() {
+        if (isDirty) {
+            update();
+            isDirty = false;
+        }
+        return viewProjection;
+    }
+    [[nodiscard]] glm::mat4 getPreviousViewProjection() {
+        if (isDirty) {
+            update();
+            isDirty = false;
+        }
+        return prevViewProjection;
     }
 
-    [[nodiscard]] glm::mat4 world_to_camera() const {
-        return WorldToCamera;
+    void setPosition(glm::vec3 pos) {
+        this->pos = pos;
+        isDirty = true;
+    }
+    void setLookAt(glm::vec3 lookAt) {
+        this->front = lookAt;
+        isDirty = true;
+    }
+    void setUp(glm::vec3 up) {
+        this->camUp = up;
+        isDirty = true;
+    }
+    void setRight(glm::vec3 right) {
+        this->right = right;
+        isDirty = true;
     }
 
-    [[nodiscard]] glm::mat4 projection() const {
-        return Projection;
+    [[nodiscard]] glm::vec3 getPos() {
+        return pos;
     }
-
-    [[nodiscard]] glm::mat4 inverse_projection() const {
-        return InverseProjection;
-    }
-
-    [[nodiscard]] glm::mat4 view_projection() const {
-        return ViewProjection;
-    }
-
-    [[nodiscard]] glm::mat4 previous_view_projection() const {
-        return PreviousViewProjection;
-    }
-
-    [[nodiscard]] glm::mat4 previous_camera_to_world() const {
-        return PreviousCameraToWorld;
-    }
-
-    [[nodiscard]] glm::vec3 center1() const {
-        return center;
-    }
-
-    [[nodiscard]] glm::vec3 front1() const {
+    [[nodiscard]] glm::vec3 getLookAt() {
         return front;
     }
-
-    [[nodiscard]] glm::vec3 right1() const {
+    [[nodiscard]] glm::vec3 getUp() {
+        return camUp;
+    }
+    [[nodiscard]] glm::vec3 getRight() {
         return right;
     }
-
-    [[nodiscard]] glm::vec3 up1() const {
-        return up;
-    }
-
-    [[nodiscard]] glm::vec3 world_up() const {
+    [[nodiscard]] glm::vec3 getWorldUp() {
         return worldUp;
     }
 
-    void resetFlag() {
-        updateFlag = false;
-    }
-
-    bool checkFlag() {
-        return updateFlag;
-    }
-
-    void set_front(const glm::vec3 &front) {
-        this->front = front;
-    }
-
-    void set_right(const glm::vec3 &right) {
-        this->right = right;
-    }
-
-    void set_up(const glm::vec3 &up) {
-        this->up = up;
-    }
-
-    void set_center(const glm::vec3 &center) {
-        this->center = center;
-    }
-
-    void needsUpdate() {
-        updateFlag = true;
-    }
-
-    void update();
-    float fov;
 private:
-    float aspect_ratio;
-    float focal_length;
-    int image_width;
-    int image_height;
-
-    glm::mat4 CameraToWorld; // View_t^-1
-    glm::mat4 WorldToCamera; // View_t
-
-    glm::mat4 Projection;
-    glm::mat4 InverseProjection;
-
-    glm::mat4 ViewProjection; // VP_t = P * View_t
-    glm::mat4 PreviousViewProjection; //VP_{t-1} = P * View_{t-1}
-
-    glm::mat4 PreviousCameraToWorld; // View_{t-1}
-
-    glm::vec3 center;
+    glm::vec3 pos;
     glm::vec3 front;
-    glm::vec3 right;
-    glm::vec3 up;
     glm::vec3 worldUp;
+    glm::vec3 camUp;
+    glm::vec3 right;
 
-    bool updateFlag;
+    glm::mat4 projection;
+    glm::mat4 inverseProjection;
+
+    glm::mat4 worldToCamera;
+    glm::mat4 cameraToWorld;
+
+    glm::mat4 viewProjection;
+    glm::mat4 prevViewProjection;
+
+    float aspectRatio;
+    float fov;
+
+    bool isDirty;
+
+    void initializeCamera();
+    void update();
 };
 
 
 
-#endif //CAMERA_H
+#endif //CAMERA_CLEAN_H

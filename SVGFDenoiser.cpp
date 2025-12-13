@@ -5,13 +5,13 @@
 #include "SVGFDenoiser.h"
 
 void SVGFDenoiser::initializeRessources() {
-    noisyColorTexture = createTexture(width, height, GL_RGBA32F, GL_RGBA, GL_FLOAT);
+    noisyColorTexture = createTexture(width, height, GL_RGBA32F, GL_RGBA, GL_FLOAT, GL_LINEAR);
     /*
     depthTexture = createTexture(width, height, GL_R32F, GL_RED, GL_FLOAT);
     normalTexture = createTexture(width, height, GL_RGBA32F, GL_RGBA, GL_FLOAT);
     meshIDTexture = createTexture(width, height, GL_R32UI, GL_RED_INTEGER, GL_UNSIGNED_INT);
     */
-    motionVectorTexture = createTexture(width, height, GL_RG16F, GL_RG, GL_FLOAT);
+    motionVectorTexture = createTexture(width, height, GL_RG16F, GL_RG, GL_FLOAT, GL_NEAREST);
 
     denoisedTextures.resize(2);
     firstRawMomentTextures.resize(2);
@@ -21,20 +21,29 @@ void SVGFDenoiser::initializeRessources() {
     meshIDTextures.resize(2);
 
     for (int i = 0; i < 2; i++) {
-        denoisedTextures[i] = createTexture(width, height, GL_RGBA32F, GL_RGBA, GL_FLOAT);
-        firstRawMomentTextures[i] = createTexture(width, height, GL_RGBA32F, GL_RGBA, GL_FLOAT);
-        secondRawMomentTextures[i] = createTexture(width, height, GL_RGBA32F, GL_RGBA, GL_FLOAT);
+        denoisedTextures[i] = createTexture(width, height, GL_RGBA32F, GL_RGBA, GL_FLOAT, GL_LINEAR);
+        firstRawMomentTextures[i] = createTexture(width, height, GL_RGBA32F, GL_RGBA, GL_FLOAT, GL_LINEAR);
+        secondRawMomentTextures[i] = createTexture(width, height, GL_RGBA32F, GL_RGBA, GL_FLOAT, GL_LINEAR);
 
-        depthTextures[i] = createTexture(width, height, GL_R32F, GL_RED, GL_FLOAT);
-        normalTextures[i] = createTexture(width, height, GL_RGBA32F, GL_RGBA, GL_FLOAT);
-        meshIDTextures[i] = createTexture(width, height, GL_R32UI, GL_RED_INTEGER, GL_UNSIGNED_INT);
+        depthTextures[i] = createTexture(width, height, GL_R32F, GL_RED, GL_FLOAT, GL_NEAREST);
+        normalTextures[i] = createTexture(width, height, GL_RGBA32F, GL_RGBA, GL_FLOAT, GL_NEAREST);
+        meshIDTextures[i] = createTexture(width, height, GL_R32UI, GL_RED_INTEGER, GL_UNSIGNED_INT, GL_NEAREST);
     }
 
-    varianceTexture = createTexture(width, height, GL_R32F, GL_RED, GL_FLOAT);
+    for(int i=0; i<2; i++) {
+        // Clear history buffers to 0 to prevent blending with garbage on frame 1
+        float clearColor[] = {0.0f, 0.0f, 0.0f, 0.0f};
+
+        glClearTexImage(denoisedTextures[i], 0, GL_RGBA, GL_FLOAT, clearColor);
+        glClearTexImage(firstRawMomentTextures[i], 0, GL_RGBA, GL_FLOAT, clearColor);
+        glClearTexImage(secondRawMomentTextures[i], 0, GL_RGBA, GL_FLOAT, clearColor);
+    }
+
+    varianceTexture = createTexture(width, height, GL_R32F, GL_RED, GL_FLOAT, GL_NEAREST);
 
     intermediateTextures.resize(2);
     for (int i = 0; i < 2; i++) {
-        intermediateTextures[i] = createTexture(width, height, GL_RGBA32F, GL_RGBA, GL_FLOAT);
+        intermediateTextures[i] = createTexture(width, height, GL_RGBA32F, GL_RGBA, GL_FLOAT, GL_NEAREST);
     }
 
     initializationShader = ComputeShader("./Shaders/initializationShader.comp.glsl");
@@ -42,15 +51,17 @@ void SVGFDenoiser::initializeRessources() {
 }
 
 
-GLuint SVGFDenoiser::createTexture(int width, int height, GLenum internalFormat, GLenum format, GLenum type) {
+GLuint SVGFDenoiser::createTexture(int width, int height, GLenum internalFormat, GLenum format, GLenum type, GLenum param) {
     GLuint texture;
     glGenTextures(1, &texture);
     glBindTexture(GL_TEXTURE_2D, texture);
 
+    float clearColor[] = { 0.0f, 0.0f, 0.0f, 0.0f };
+
     glTexImage2D(GL_TEXTURE_2D, 0, internalFormat, width, height, 0, format, type, NULL);
 
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, param);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, param);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     if (internalFormat == GL_R32F || internalFormat == GL_R32UI) {

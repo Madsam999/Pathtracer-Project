@@ -19,14 +19,15 @@ layout(binding = 2, rgba32f) uniform image2D secondMomentOutput;
 uniform int FrameCount;
 
 const float ALPHA_MAX = 0.95; // Max accumulation factor (to prevent infinite accumulation)
-const float DEPTH_THRESHOLD = 0.005; // Depth validation epsilon
+const float DEPTH_THRESHOLD = 0.05; // Depth validation epsilon
 const float NORMAL_THRESHOLD = 0.90; // Normal validation threshold (dot product)
 const float EPSILON = 0.001;
+const float MAX_ACCUMULATION = 32.f;
 
 void main() {
     ivec2 pixelCoords = ivec2(gl_GlobalInvocationID.xy);
     ivec2 screenDim = imageSize(denoisedOutput);
-    vec2 currentUV = vec2(pixelCoords) / vec2(screenDim);
+    vec2 currentUV = (vec2(pixelCoords) + 0.5f) / vec2(screenDim);
 
     vec4 noisyColor = texture(NoisyColorTexture, currentUV);
     float currentDepth = texture(CurrentDepthTexture, currentUV).r;
@@ -34,7 +35,7 @@ void main() {
     vec4 motionTexel = texture(MotionVectorTexture, currentUV);
     vec2 motionVector = motionTexel.rg;
 
-    vec2 historyUV = currentUV - vec2(0.f);
+    vec2 historyUV = currentUV - motionVector;
 
     bool isValid = true;
 
@@ -78,17 +79,17 @@ void main() {
     float currentAccumulationCount = 1.f;
     if(isValid) {
         float oldAccumulationCount = historyColor.a;
-
-        float maxCount = 64.f;
+        float maxCount = 1024.f;
         float clampedOldCount = min(oldAccumulationCount, maxCount);
-
         float alpha = 1.f / (clampedOldCount + 1);
         //finalColor = vec3(1, 1, 1);
-        finalColor = mix(historyColor.rgb, noisyColor.rgb, 0.3);
+        finalColor = mix(historyColor.rgb, noisyColor.rgb, alpha);
 
         currentAccumulationCount = oldAccumulationCount + 1;
     }
     vec3 colorSquared = finalColor * finalColor;
+
+
 
     imageStore(firstMomentOutput, pixelCoords, vec4(finalColor, 1.f));
     imageStore(secondMomentOutput, pixelCoords, vec4(colorSquared, 1.f));

@@ -41,6 +41,8 @@ struct Material {
 struct SphereStruct {
     mat4 transform; // Model matrix (Local to World)
     mat4 invTransform; // Inverse Model matrix (World to Local)
+    mat4 prevTransform;
+    mat4 prevInverseTransform;
     Material mat;
     uvec4 objectID;
 };
@@ -53,6 +55,8 @@ struct Triangle {
 struct MeshInfo {
     mat4 transform;
     mat4 invTransform;
+    mat4 prevTransform;
+    mat4 prevInverseTransform;
     vec4 boundsMin;
     vec4 boundsMax;
     uvec4 info;
@@ -72,6 +76,8 @@ struct HitInfo {
     vec3 normal;
     Material mat;
     uint objectID;
+    mat4 inverseModelMatrix;
+    mat4 previousModel;
 };
 
 // SSBO 1: Spheres
@@ -257,6 +263,8 @@ HitInfo intersect(Ray ray) {
             mat3 normalTransform = transpose(mat3(sphere.invTransform));
             bestHit.normal = normalize(normalTransform * localSphereHit.normal);
             bestHit.hasHit = localSphereHit.hasHit;
+            bestHit.inverseModelMatrix = sphere.invTransform;
+            bestHit.previousModel = sphere.prevTransform;
         }
     }
 
@@ -288,6 +296,8 @@ HitInfo intersect(Ray ray) {
                 mat3 normalTransform = transpose(mat3(mesh.invTransform));
                 bestHit.normal = normalize(normalTransform * localTriangleHit.normal);
                 bestHit.hasHit = localTriangleHit.hasHit;
+                bestHit.previousModel = mesh.prevTransform;
+                bestHit.inverseModelMatrix = mesh.invTransform;
             }
         }
     }
@@ -328,7 +338,11 @@ void main() {
 
         vec3 hitPosition = ray.origin + ray.direction * primaryHit.distance;
 
-        vec4 prevClip = PrevVP * vec4(hitPosition, 1.f);
+        vec3 hitInLocal = vec3(primaryHit.inverseModelMatrix * vec4(hitPosition, 1.f));
+
+        vec3 previousPositionOfHit = vec3(primaryHit.previousModel * vec4(hitInLocal, 1.f));
+
+        vec4 prevClip = PrevVP * vec4(previousPositionOfHit, 1.f);
 
         vec2 prevUV = (prevClip.xy / prevClip.w) * 0.5 + 0.5;
 

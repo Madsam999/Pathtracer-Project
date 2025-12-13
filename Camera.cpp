@@ -1,19 +1,38 @@
 //
-// Created by Samuel on 2025-07-30.
+// Created by Samuel on 12/5/2025.
 //
 
 #include "Camera.h"
 
+#include <glm/ext/matrix_clip_space.hpp>
+#include <glm/ext/matrix_transform.hpp>
+
+void Camera::initializeCamera() {
+    glm::mat4 view = glm::lookAt(pos, front, worldUp);
+
+    worldToCamera = view;
+    cameraToWorld = glm::inverse(view);
+
+    glm::mat4 proj = glm::perspective(glm::radians(fov), aspectRatio, 0.1f, 100.0f);
+
+    projection = proj;
+    inverseProjection = glm::inverse(proj);
+
+    viewProjection = proj * view;
+    prevViewProjection = viewProjection;
+
+    isDirty = false;
+}
+
 void Camera::update() {
-    glm::mat4 OldCameraToWorld = CameraToWorld;
-    glm::mat4 OldViewProjection = ViewProjection;
+    prevViewProjection = viewProjection;
 
-    WorldToCamera = glm::lookAt(center, center + front, up);
-    CameraToWorld = glm::inverse(WorldToCamera);
+    // We assume that projection is constant (fov and image size are both constant)
 
-    PreviousCameraToWorld = OldCameraToWorld;
+    glm::mat4 view = glm::lookAt(pos, front + pos, camUp);
 
-    ViewProjection = CameraToWorld * Projection;
+    worldToCamera = view;
+    cameraToWorld = glm::inverse(view);
 
-    PreviousViewProjection = OldViewProjection;
+    viewProjection = projection * view;
 }

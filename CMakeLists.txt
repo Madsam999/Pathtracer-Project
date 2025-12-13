@@ -44,8 +44,6 @@ add_executable(Pathtracer_Project main.cpp
         ObjectClasses/Mesh.h
         Utilities/MeshBuilder.cpp
         Utilities/MeshBuilder.h
-        SVGFDenoiser_old.cpp
-        SVGFDenoiser_old.h
         SVGFDenoiser.cpp
         SVGFDenoiser.h
 )

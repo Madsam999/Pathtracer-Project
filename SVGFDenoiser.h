@@ -69,7 +69,7 @@ private:
     GLuint varianceTexture;
     GLuint motionVectorTexture;
 
-    GLuint createTexture(int width, int height, GLenum internalFormat, GLenum format, GLenum type);
+    GLuint createTexture(int width, int height, GLenum internalFormat, GLenum format, GLenum type, GLenum param);
 
     ComputeShader initializationShader;
     ComputeShader accumulationPassShader;

@@ -15,7 +15,7 @@ Scene::Scene(int ray_per_pixel, int max_ray_bounce, Camera *camera) : camera(cam
 
 void Scene::buildDefaultScene() {
     // 1. Create Materials (as shared resources)
-    auto red_mat = std::make_shared<Material>(glm::vec3(1.0f, 0.7f, 0.0f), glm::vec3(0.0f), 0.0f, 0.0f);
+    auto red_mat = std::make_shared<Material>(glm::vec3(1.0f, 0.7f, 0.0f), glm::vec3(0.0f), 0.0f, 1.0f);
     auto green_mat = std::make_shared<Material>(glm::vec3(0.0f, 1.0f, 0.0f), glm::vec3(0.0f), 0.0f, 0.0f);
     auto blue_mat = std::make_shared<Material>(glm::vec3(0.0f, 0.0f, 1.0f), glm::vec3(0.0f), 0.0f, 0.3);
     auto light_mat = std::make_shared<Material>(glm::vec3(0.0f), glm::vec3(1.0f, 1.0f, 1.0f), 10.0f, 0.0f);
@@ -79,10 +79,10 @@ glm::vec3 generateRandomOffset() {
 }
 
 
-std::vector<glm::vec3> Scene::renderTest() const {
+std::vector<glm::vec3> Scene::renderTest() {
     std::vector<glm::vec3> result;
-    int width = camera->get_image_width();
-    int height = camera->get_image_height();
+    int width = 1920;//camera->get_image_width();
+    int height = 1080;//camera->get_image_height();
     for (int y = 0; y < height; y++) {
         std::cout << "Scanline: " << y << std::endl;
         for (int x = 0; x < width; x++) {
@@ -95,18 +95,18 @@ std::vector<glm::vec3> Scene::renderTest() const {
                 glm::vec2 screenPos01 = (glm::vec2(x, y) + offset) / glm::vec2(width, height);
 
                 glm::vec4 clipPos = glm::vec4(screenPos01 * 2.f - 1.f, 1.f, 1.f);
-                glm::vec4 viewPos = camera->inverse_projection() * glm::vec4(clipPos.x, clipPos.y, -1, 1);
+                glm::vec4 viewPos = camera->getInverseProjection() * glm::vec4(clipPos.x, clipPos.y, -1, 1);
 
                 viewPos.x /= viewPos.w;
                 viewPos.y /= viewPos.w;
                 viewPos.z /= viewPos.w;
 
-                glm::vec3 viewDirWorld = glm::vec3(camera->camera_to_world() * viewPos);
+                glm::vec3 viewDirWorld = glm::vec3(camera->getInverseView() * viewPos);
 
-                glm::vec3 rayDir = glm::normalize(viewDirWorld - camera->center1());
+                glm::vec3 rayDir = glm::normalize(viewDirWorld - camera->getPos());
 
                 // The ray's origin is the camera's world-space position
-                glm::vec3 rayOrig = camera->center1();;
+                glm::vec3 rayOrig = camera->getPos();;
 
                 rayDir = glm::normalize(rayDir);
                 Ray ray(rayOrig, rayDir);
@@ -122,7 +122,7 @@ std::vector<glm::vec3> Scene::renderTest() const {
     return result;
 }
 
-glm::vec3 Scene::trace(Ray& ray) const {
+glm::vec3 Scene::trace(Ray& ray) {
     glm::vec3 finalColor = glm::vec3(0, 0, 0);
     glm::vec3 rayColor = glm::vec3(1.0f, 1.0f, 1.0f);
     for (int mrb = 0 ; mrb < max_ray_bounce; mrb++) {
@@ -144,14 +144,14 @@ glm::vec3 Scene::trace(Ray& ray) const {
     return glm::clamp(finalColor, 0.0f, 1.0f);
 }
 
-HitInfo Scene::intersectScene(Ray& ray) const {
+HitInfo Scene::intersectScene(Ray& ray) {
     HitInfo bestHit;
     bestHit.hit = false;
     bestHit.hitDist = std::numeric_limits<float>::max();
-    for (const auto& sphere : spheres) {
+    for (auto& sphere : spheres) {
         sphere.intersect(ray, bestHit);
     }
-    for (const auto& mesh : meshes) {
+    for (auto& mesh : meshes) {
         mesh.intersect(ray, bestHit);
     }
     return bestHit;

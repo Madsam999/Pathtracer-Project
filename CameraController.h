@@ -9,6 +9,8 @@
 
 #include <GLFW/glfw3.h>
 
+#include "Camera.h"
+
 enum {
     UP = GLFW_KEY_SPACE,
     DOWN = GLFW_KEY_CAPS_LOCK,
