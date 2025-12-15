@@ -81,9 +81,10 @@ void Engine::raytracePass(int frame, int currentFrame, int historyFrame) {
     raytracer.use();
 
     raytracer.setInt("frameCnt", frame);
-    raytracer.setInt("RayPerPixel", scene->ray_per_pixel1());
-    raytracer.setInt("MaxRayBounce", scene->max_ray_bounce1());
+    raytracer.setInt("RayPerPixel", rpp);
+    raytracer.setInt("MaxRayBounce", mrb);
     raytracer.setFloat3("ViewCenter", camera->getPos());
+    raytracer.setBool("denoiserActive", denoiserActive);
 
     // Matrix Uniforms
     raytracer.setFloat44("InverseProjection", camera->getInverseProjection());
@@ -98,8 +99,16 @@ void Engine::raytracePass(int frame, int currentFrame, int historyFrame) {
 
 void Engine::accumulationPass(int frame, int currentFrame, int historyFrame) {
     denoiser.accumulationPass(currentFrame, historyFrame, frame);
-    glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
 }
+
+void Engine::varianceEstimatePass(int currentFrame) {
+    denoiser.varianceEstimatePass(currentFrame);
+}
+
+void Engine::atrousFilterPass(int currentFrame, int historyFrame) {
+    denoiser.atrousFilterPass(currentFrame, historyFrame);
+}
+
 
 void Engine::renderToScreen(int currentFrame, unsigned int quadVAO) {
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -107,30 +116,12 @@ void Engine::renderToScreen(int currentFrame, unsigned int quadVAO) {
     int currentDebugMode = 0;
     GLuint textureToDisplay = 0;
 
-    switch (debugMode) {
-        case DebugMode::NOISY_TEXTURE:
-            currentDebugMode = 0;
+    switch (denoiserActive) {
+        case false:
             textureToDisplay = denoiser.getNoisyTexture();
             break;
-        case DebugMode::DEPTH_TEXTURE:
-            currentDebugMode = 1;
-            textureToDisplay = denoiser.getDepthTexture(currentFrame);
-            break;
-        case DebugMode::NORMAL_TEXTURE:
-            currentDebugMode = 2;
-            textureToDisplay = denoiser.getNormalTexture(currentFrame);
-            break;
-        case DebugMode::MOTION_TEXTURE:
-            currentDebugMode = 3;
-            textureToDisplay = denoiser.getMotionVectorTexture();
-            break;
-        case DebugMode::ACCUMULATION_TEXTURE:
-            currentDebugMode = 4;
+        case true:
             textureToDisplay = denoiser.getDenoisedTexture(currentFrame);
-            break;
-        case DebugMode::MESH_ID_TEXTURE:
-            currentDebugMode = 5;
-            textureToDisplay = denoiser.getMeshIdTexture();
             break;
     }
 
@@ -139,7 +130,6 @@ void Engine::renderToScreen(int currentFrame, unsigned int quadVAO) {
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, textureToDisplay);
     glUniform1i(glGetUniformLocation(shader.getProgram(), "u_DebugTexture"), 0);
-    shader.setInt("u_DebugMode", currentDebugMode);
 
     glBindVertexArray(quadVAO);
     glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
@@ -150,7 +140,8 @@ void Engine::renderGUI() {
     // --- 1. Settings Window ---
     ImGui::Begin("Settings");
     ImGui::Text("FPS: %.1f", ImGui::GetIO().Framerate);
-    // Setting these flags can trigger a reset in the denoising/raytracing
+    ImGui::SliderInt("Ray Per Pixel", &rpp, 1, 1000);
+    ImGui::SliderInt("Max Ray Bounce", &mrb, 1, 1000);
     ImGui::End();
 
     // --- 2. Camera Info Window ---
@@ -159,23 +150,13 @@ void Engine::renderGUI() {
     ImGui::Text("x: %f", camera->getPos().x);
     ImGui::Text("y: %f", camera->getPos().y);
     ImGui::Text("z: %f", camera->getPos().z);
-    // ... (rest of camera info)
     ImGui::End();
 
-    // --- 3. Debug Mode Window ---
-    ImGui::Begin("Debug Mode");
-    ImGui::Text("Debug Mode");
-    // Cast the enum pointer to int* for ImGui's widget
-    int* currentDebugModePtr = reinterpret_cast<int*>(&debugMode);
-
-    // Display radio buttons for texture selection
-    ImGui::RadioButton("Noisy Color", currentDebugModePtr, (int)DebugMode::NOISY_TEXTURE);
-    ImGui::RadioButton("Depth (G-Buffer)", currentDebugModePtr, (int)DebugMode::DEPTH_TEXTURE);
-    ImGui::RadioButton("Normals (G-Buffer)", currentDebugModePtr, (int)DebugMode::NORMAL_TEXTURE);
-    ImGui::RadioButton("Motion Vector (G-Buffer)", currentDebugModePtr, (int)DebugMode::MOTION_TEXTURE);
-    ImGui::RadioButton("Denoised Texture", currentDebugModePtr, (int)DebugMode::ACCUMULATION_TEXTURE);
-    ImGui::RadioButton("MeshID Texture", currentDebugModePtr, (int)DebugMode::MESH_ID_TEXTURE);
-    ImGui::Separator();
+    bool enabled = false;
+    ImGui::Begin("Denoiser Settings");
+    ImGui::Text("Denoiser Settings");
+    if (ImGui::Checkbox("Denoiser Active", &denoiserActive)) {
+    }
     ImGui::End();
 
     // --- Final Render ---
@@ -242,9 +223,14 @@ void Engine::run() {
         frameCount++;
 
         raytracePass(frameCount, currentFrame, historyFrame);
+        printf("RPP: %d | MRB: %d \n", rpp, mrb);
 
-        accumulationPass(frameCount, currentFrame, historyFrame);
-        glMemoryBarrier(GL_TEXTURE_FETCH_BARRIER_BIT | GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
+        if (denoiserActive) {
+            accumulationPass(frameCount, currentFrame, historyFrame);
+
+            varianceEstimatePass(currentFrame);
+            atrousFilterPass(currentFrame, historyFrame);
+        }
 
         renderToScreen(currentFrame, quadVAO);
 
@@ -253,10 +239,7 @@ void Engine::run() {
         glfwSwapBuffers(window);
         glfwPollEvents();
 
-        int temp = currentFrame;
-        currentFrame = historyFrame;
-        historyFrame = temp;
-
+        std::swap(currentFrame, historyFrame);
     }
 }
 

@@ -12,6 +12,7 @@ uniform usampler2D HistoryMeshIDTexture;
 uniform usampler2D CurrentMeshIDTexture;
 uniform sampler2D CurrentNormalTexture;
 
+
 layout(binding = 0, rgba32f) uniform image2D denoisedOutput;
 layout(binding = 1, rgba32f) uniform image2D firstMomentOutput;
 layout(binding = 2, rgba32f) uniform image2D secondMomentOutput;

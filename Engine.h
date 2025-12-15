@@ -90,6 +90,8 @@ public:
 
     void bindScene(Scene* scene) {
         this->scene = scene;
+        this->rpp = scene->ray_per_pixel1();
+        this->mrb = scene->max_ray_bounce1();
     }
     void bindCamera(Camera* camera) {
         this->camera = camera;
@@ -104,6 +106,7 @@ private:
     // Member variables
     GLFWwindow* window;
     int width, height;
+    int rpp, mrb;
 
     Scene* scene;
     Camera* camera;
@@ -116,6 +119,8 @@ private:
     DebugMode debugMode;
 
     GLuint meshSSBO, triangleSSBO, sphereSSBO;
+
+    bool denoiserActive = false;
 
     // Private functions
     void createGLWFContext(const char* title);
@@ -132,6 +137,8 @@ private:
 
     void raytracePass(int frame, int currentFrame, int historyFrame);
     void accumulationPass(int frame, int currentFrame, int historyFrame);
+    void varianceEstimatePass(int currentFrame);
+    void atrousFilterPass(int currentFrame, int historyFrame);
     void renderToScreen(int currentFrame, unsigned int quadVAO);
     void renderGUI();
 

@@ -42,6 +42,9 @@ public:
 
     void accumulationPass(int currentFrameIndex, int historyFrameIndex, int frameCnt);
 
+    void varianceEstimatePass(int currentFrameIndex);
+    void atrousFilterPass(int& currentFrameIndex, int& historyFrameIndex);
+
 private:
     int width, height;
 
@@ -62,17 +65,20 @@ private:
     // Stores the intermediate results of A-Trous wavelet transform
     std::vector<GLuint> intermediateTextures;
 
+    std::vector<GLuint> varianceTextures;
     GLuint noisyColorTexture;
     GLuint depthTexture;
     GLuint normalTexture;
     GLuint meshIDTexture;
-    GLuint varianceTexture;
     GLuint motionVectorTexture;
+    GLuint rawSecondMomentsTexture;
 
     GLuint createTexture(int width, int height, GLenum internalFormat, GLenum format, GLenum type, GLenum param);
 
     ComputeShader initializationShader;
     ComputeShader accumulationPassShader;
+    ComputeShader variancePassShader;
+    ComputeShader atrousPassShader;
 };
 
 

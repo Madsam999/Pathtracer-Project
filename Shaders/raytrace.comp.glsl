@@ -29,6 +29,7 @@ uniform vec3 ViewCenter;
 uniform vec3 RedSphereColor;
 uniform vec3 LightColor;
 uniform bool DarkMode;
+uniform bool denoiserActive;
 
 struct Material {
     vec4 color;
@@ -305,32 +306,12 @@ HitInfo intersect(Ray ray) {
     return bestHit;
 }
 
-void main() {
-    ivec2 pixelCoords = ivec2(gl_GlobalInvocationID.xy);
-    ivec2 image_size = imageSize(noisyImage);
-
-    uint rngState = uint(uint(pixelCoords.x) * uint(1973) + uint(pixelCoords.y) * uint(9277)) | uint(1);
-    rngState += uint(frameCnt);
-
-    uint sample_seed = rngState; // A simple way to get a different seed for each sample
-
-    float randomX = RandomFloat01(rngState);
-    float randomY = RandomFloat01(rngState);
-
-    vec2 screenPos01 = (vec2(pixelCoords) + vec2(randomX, randomY)) / vec2(image_size);
-
-    vec4 clipPos = vec4(screenPos01 * 2 - 1, 1, 1);
-
-    vec4 viewPos = InverseProjection * vec4(clipPos.xy, -1, 1);
-    viewPos.xyz /= viewPos.w;
-
-    vec3 rayDir = normalize(vec3(CameraToWorld * vec4(viewPos.xyz, 0.f)));
-
-    Ray ray = createRay(rayDir, ViewCenter);
+vec3 DenoiserRaytrace(Ray ray, ivec2 pixelCoords, inout uint rngState) {
+    vec3 finalColor = vec3(0.f);
+    vec3 rayColor = vec3(1.f);
 
     HitInfo primaryHit = createHitInfo();
     primaryHit = intersect(ray);
-
     if(primaryHit.hasHit) {
         imageStore(depthImage, pixelCoords, vec4(primaryHit.distance, 0, 0, 1));
         imageStore(normalImage, pixelCoords, vec4(primaryHit.normal, 1.f));
@@ -361,9 +342,6 @@ void main() {
         imageStore(motionVectorImage, pixelCoords, vec4(0, 0, 0, 1));
     }
 
-    vec3 finalColor = vec3(0, 0, 0);
-    vec3 rayColor = vec3(1, 1, 1);
-
     if(primaryHit.hasHit) {
         vec3 emittedLight = primaryHit.mat.emissionColor.xyz * primaryHit.mat.emissionStrength;
         finalColor += emittedLight * rayColor;
@@ -377,7 +355,7 @@ void main() {
         vec3 newDir = normalize(mix(diffuseDir, specularDir, primaryHit.mat.specular));
         ray.direction = newDir;
 
-        for(int i = 1; i < MaxRayBounce; i++) {
+        for(int i = 1; i <= MaxRayBounce; i++) {
             HitInfo hit = intersect(ray);
 
             if(!hit.hasHit) {
@@ -385,6 +363,7 @@ void main() {
                     break;
                 }
                 else {
+                    // Use 'currentRay'
                     finalColor += colorPixel(ray) * rayColor;
                     break;
                 }
@@ -403,6 +382,93 @@ void main() {
             ray.direction = newDir;
         }
     }
+    else {
+        if(!DarkMode) {
+            finalColor += colorPixel(ray) * rayColor;
+        }
+    }
 
-    imageStore(noisyImage, pixelCoords, vec4(finalColor, 1));
+    return finalColor;
+}
+
+vec3 NoDenoiserRaytrace(Ray ray, inout uint rngState) {
+    vec3 averageColor = vec3(0.f);
+
+    for(int i = 0; i < RayPerPixel; i++) {
+        // FIX: Create a local copy of the master ray for this specific sample
+        Ray currentRay = ray;
+
+        // Also ensure you jitter the ray per sample if you want anti-aliasing!
+        // (Assuming 'ray' passed in is already jittered, otherwise jitter 'currentRay' here)
+
+        vec3 finalColor = vec3(0.f);
+        vec3 rayColor = vec3(1.f);
+
+        for(int j = 0; j < MaxRayBounce; j++) {
+            // Use 'currentRay' instead of 'ray'
+            HitInfo hit = intersect(currentRay);
+
+            if(!hit.hasHit) {
+                if(DarkMode) {
+                    break;
+                }
+                else {
+                    // Use 'currentRay'
+                    finalColor += colorPixel(currentRay) * rayColor;
+                    break;
+                }
+            }
+
+            vec3 emittedLight = hit.mat.emissionColor.xyz * hit.mat.emissionStrength;
+            finalColor += emittedLight * rayColor;
+            rayColor *= hit.mat.color.xyz;
+
+            // Update 'currentRay' for the next bounce
+            vec3 newPos = (currentRay.origin + currentRay.direction * hit.distance) + hit.normal * 0.000001f;
+            currentRay.origin = newPos; // Update local copy
+
+            rngState += frameCnt;
+            vec3 diffuseDir = normalize(hit.normal + RandomUnitVector(rngState));
+            vec3 specularDir = normalize(reflect(currentRay.direction, hit.normal));
+            vec3 newDir = normalize(mix(diffuseDir, specularDir, hit.mat.specular));
+            currentRay.direction = newDir; // Update local copy
+        }
+        averageColor += finalColor;
+    }
+    return averageColor / float(RayPerPixel);
+}
+
+void main() {
+    ivec2 pixelCoords = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 image_size = imageSize(noisyImage);
+
+    uint rngState = uint(uint(pixelCoords.x) * uint(1973) + uint(pixelCoords.y) * uint(9277)) | uint(1);
+    rngState += uint(frameCnt);
+
+    uint sample_seed = rngState; // A simple way to get a different seed for each sample
+
+    float randomX = RandomFloat01(rngState);
+    float randomY = RandomFloat01(rngState);
+
+    vec2 screenPos01 = (vec2(pixelCoords) + vec2(randomX, randomY)) / vec2(image_size);
+
+    vec4 clipPos = vec4(screenPos01 * 2 - 1, 1, 1);
+
+    vec4 viewPos = InverseProjection * vec4(clipPos.xy, -1, 1);
+    viewPos.xyz /= viewPos.w;
+
+    vec3 rayDir = normalize(vec3(CameraToWorld * vec4(viewPos.xyz, 0.f)));
+
+    Ray ray = createRay(rayDir, ViewCenter);
+
+    vec3 outColor = vec3(0.f);
+
+    if(denoiserActive) {
+        outColor = DenoiserRaytrace(ray, pixelCoords, rngState);
+    }
+    else {
+        outColor = NoDenoiserRaytrace(ray, rngState);
+    }
+
+    imageStore(noisyImage, pixelCoords, vec4(outColor, 1.f));
 }

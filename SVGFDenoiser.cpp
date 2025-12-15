@@ -6,12 +6,8 @@
 
 void SVGFDenoiser::initializeRessources() {
     noisyColorTexture = createTexture(width, height, GL_RGBA32F, GL_RGBA, GL_FLOAT, GL_LINEAR);
-    /*
-    depthTexture = createTexture(width, height, GL_R32F, GL_RED, GL_FLOAT);
-    normalTexture = createTexture(width, height, GL_RGBA32F, GL_RGBA, GL_FLOAT);
-    meshIDTexture = createTexture(width, height, GL_R32UI, GL_RED_INTEGER, GL_UNSIGNED_INT);
-    */
     motionVectorTexture = createTexture(width, height, GL_RG16F, GL_RG, GL_FLOAT, GL_NEAREST);
+    rawSecondMomentsTexture = createTexture(width, height, GL_RGBA32F, GL_RGBA, GL_FLOAT, GL_LINEAR);
 
     denoisedTextures.resize(2);
     firstRawMomentTextures.resize(2);
@@ -19,6 +15,7 @@ void SVGFDenoiser::initializeRessources() {
     depthTextures.resize(2);
     normalTextures.resize(2);
     meshIDTextures.resize(2);
+    varianceTextures.resize(2);
 
     for (int i = 0; i < 2; i++) {
         denoisedTextures[i] = createTexture(width, height, GL_RGBA32F, GL_RGBA, GL_FLOAT, GL_LINEAR);
@@ -28,6 +25,8 @@ void SVGFDenoiser::initializeRessources() {
         depthTextures[i] = createTexture(width, height, GL_R32F, GL_RED, GL_FLOAT, GL_NEAREST);
         normalTextures[i] = createTexture(width, height, GL_RGBA32F, GL_RGBA, GL_FLOAT, GL_NEAREST);
         meshIDTextures[i] = createTexture(width, height, GL_R32UI, GL_RED_INTEGER, GL_UNSIGNED_INT, GL_NEAREST);
+
+        varianceTextures[i] = createTexture(width, height, GL_R32F, GL_RED, GL_FLOAT, GL_NEAREST);
     }
 
     for(int i=0; i<2; i++) {
@@ -37,9 +36,8 @@ void SVGFDenoiser::initializeRessources() {
         glClearTexImage(denoisedTextures[i], 0, GL_RGBA, GL_FLOAT, clearColor);
         glClearTexImage(firstRawMomentTextures[i], 0, GL_RGBA, GL_FLOAT, clearColor);
         glClearTexImage(secondRawMomentTextures[i], 0, GL_RGBA, GL_FLOAT, clearColor);
+        glClearTexImage(varianceTextures[i], 0, GL_RGBA, GL_FLOAT, clearColor);
     }
-
-    varianceTexture = createTexture(width, height, GL_R32F, GL_RED, GL_FLOAT, GL_NEAREST);
 
     intermediateTextures.resize(2);
     for (int i = 0; i < 2; i++) {
@@ -48,6 +46,8 @@ void SVGFDenoiser::initializeRessources() {
 
     initializationShader = ComputeShader("./Shaders/initializationShader.comp.glsl");
     accumulationPassShader = ComputeShader("./Shaders/AccumulationPass.comp.glsl");
+    variancePassShader = ComputeShader("./Shaders/estimate_variance.comp.glsl");
+    atrousPassShader = ComputeShader("./Shaders/atrous_filter.comp.glsl");
 }
 
 
@@ -176,8 +176,58 @@ void SVGFDenoiser::accumulationPass(int currentFrameIndex, int historyFrameIndex
     glBindImageTexture(1, firstRawMomentTextures[currentFrameIndex], 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_RGBA32F);
     glBindImageTexture(2, secondRawMomentTextures[currentFrameIndex], 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_RGBA32F);
 
-    glDispatchCompute(ceil(width / 16), ceil(height / 16), 1);
+    accumulationPassShader.dispatch(
+        ceil(width / 16), ceil(height / 16), 1,
+        GL_TEXTURE_FETCH_BARRIER_BIT | GL_SHADER_IMAGE_ACCESS_BARRIER_BIT | GL_SHADER_IMAGE_ACCESS_BARRIER_BIT
+    );
 }
+
+void SVGFDenoiser::varianceEstimatePass(int currentFrameIndex) {
+    variancePassShader.use();
+
+    glBindImageTexture(0, firstRawMomentTextures[currentFrameIndex], 0, GL_FALSE, 0, GL_READ_ONLY, GL_RGBA32F);
+    glBindImageTexture(1, secondRawMomentTextures[currentFrameIndex], 0, GL_FALSE, 0, GL_READ_ONLY, GL_RGBA32F);
+    glBindImageTexture(2, depthTextures[currentFrameIndex], 0, GL_FALSE, 0, GL_READ_ONLY, GL_R32F);
+    glBindImageTexture(3, normalTextures[currentFrameIndex], 0, GL_FALSE, 0, GL_READ_ONLY, GL_RGBA32F);
+
+    glBindImageTexture(4, varianceTextures[currentFrameIndex], 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_R32F);
+
+    variancePassShader.dispatch(
+        ceil(width / 16), ceil(height / 16), 1,
+        GL_TEXTURE_FETCH_BARRIER_BIT | GL_SHADER_IMAGE_ACCESS_BARRIER_BIT | GL_SHADER_IMAGE_ACCESS_BARRIER_BIT
+    );
+}
+
+void SVGFDenoiser::atrousFilterPass(int& currentFrameIndex, int& historyFrameIndex) {
+    int readIndex = currentFrameIndex;
+    int writeIndex = historyFrameIndex;
+
+    atrousPassShader.use();
+
+    glBindImageTexture(4, normalTextures[currentFrameIndex], 0, GL_FALSE, 0, GL_READ_ONLY, GL_RGBA32F);
+    glBindImageTexture(5, depthTextures[currentFrameIndex], 0, GL_FALSE, 0, GL_READ_ONLY, GL_R32F);
+
+    for (int i = 0; i < 5; i++) { // Ensure you run ~4-5 iterations for good results
+        int stepSize = 1 << i;
+        atrousPassShader.setInt("stepSize", stepSize);
+
+        // Color & Variance Ping-Pong (These use readIndex/writeIndex)
+        glBindImageTexture(0, denoisedTextures[readIndex], 0, GL_FALSE, 0, GL_READ_ONLY, GL_RGBA32F);
+        glBindImageTexture(1, denoisedTextures[writeIndex], 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_RGBA32F);
+
+        glBindImageTexture(2, varianceTextures[readIndex], 0, GL_FALSE, 0, GL_READ_ONLY, GL_R32F);
+        glBindImageTexture(3, varianceTextures[writeIndex], 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_R32F);
+
+        atrousPassShader.dispatch(ceil(width / 16), ceil(height / 16), 1, GL_ALL_BARRIER_BITS);
+
+        std::swap(readIndex, writeIndex);
+    }
+
+    currentFrameIndex = readIndex;
+    historyFrameIndex = writeIndex;
+}
+
+
 
 
 
