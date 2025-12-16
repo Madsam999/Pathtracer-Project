@@ -1,0 +1,17 @@
+@inproceedings{10.1145/3105762.3105770,
+author = {Schied, Christoph and Kaplanyan, Anton and Wyman, Chris and Patney, Anjul and Chaitanya, Chakravarty R. Alla and Burgess, John and Liu, Shiqiu and Dachsbacher, Carsten and Lefohn, Aaron and Salvi, Marco},
+title = {Spatiotemporal variance-guided filtering: real-time reconstruction for path-traced global illumination},
+year = {2017},
+isbn = {9781450351010},
+publisher = {Association for Computing Machinery},
+address = {New York, NY, USA},
+url = {https://doi.org/10.1145/3105762.3105770},
+doi = {10.1145/3105762.3105770},
+abstract = {We introduce a reconstruction algorithm that generates a temporally stable sequence of images from one path-per-pixel global illumination. To handle such noisy input, we use temporal accumulation to increase the effective sample count and spatiotemporal luminance variance estimates to drive a hierarchical, image-space wavelet filter [Dammertz et al. 2010]. This hierarchy allows us to distinguish between noise and detail at multiple scales using local luminance variance.Physically based light transport is a long-standing goal for realtime computer graphics. While modern games use limited forms of ray tracing, physically based Monte Carlo global illumination does not meet their 30 Hz minimal performance requirement. Looking ahead to fully dynamic real-time path tracing, we expect this to only be feasible using a small number of paths per pixel. As such, image reconstruction using low sample counts is key to bringing path tracing to real-time. When compared to prior interactive reconstruction filters, our work gives approximately 10\texttimes{} more temporally stable results, matches reference images 5--47\% better (according to SSIM), and runs in just 10 ms (± 15\%) on modern graphics hardware at 1920\texttimes{}1080 resolution.},
+booktitle = {Proceedings of High Performance Graphics},
+articleno = {2},
+numpages = {12},
+keywords = {global illumination, real-time rendering, reconstruction},
+location = {Los Angeles, California},
+series = {HPG '17}
+}

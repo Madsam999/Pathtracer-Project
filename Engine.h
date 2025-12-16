@@ -10,6 +10,8 @@
 #include <algorithm>
 #include <iostream>
 #include <ostream>
+#include <filesystem>
+namespace fs = std::filesystem;
 
 #include "ImGui/imgui.h"
 #include "ImGui/imgui_impl_glfw.h"
@@ -120,7 +122,8 @@ private:
 
     GLuint meshSSBO, triangleSSBO, sphereSSBO;
 
-    bool denoiserActive = false;
+    bool denoiserActive = true;
+    int screenShots = 11;
 
     // Private functions
     void createGLWFContext(const char* title);
@@ -143,6 +146,7 @@ private:
     void renderGUI();
 
     void handleInputEvents();
+    void takeScreenShot(GLuint denoisedTexture);
 };
 
 

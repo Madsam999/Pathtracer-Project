@@ -39,6 +39,7 @@ private:
     float yaw, pitch = 0.0f;
 
     bool cursorDisabled = true;
+    double mouseX, mouseY;
 };
 
 

@@ -19,7 +19,7 @@ void Scene::buildDefaultScene() {
     auto green_mat = std::make_shared<Material>(glm::vec3(0.0f, 1.0f, 0.0f), glm::vec3(0.0f), 0.0f, 0.0f);
     auto blue_mat = std::make_shared<Material>(glm::vec3(0.0f, 0.0f, 1.0f), glm::vec3(0.0f), 0.0f, 0.3);
     auto light_mat = std::make_shared<Material>(glm::vec3(0.0f), glm::vec3(1.0f, 1.0f, 1.0f), 10.0f, 0.0f);
-
+/*
     spheres.emplace_back(
         0.5f,
         glm::vec3(0.0f, -0.25f, -1.5f),
@@ -27,6 +27,7 @@ void Scene::buildDefaultScene() {
         glm::vec3(0.5f, 0.5f, 0.5f),
         red_mat
     );
+*/
     spheres.emplace_back(
         1.f,
         glm::vec3(1.5f, 0.0f, -1.0f),
@@ -55,6 +56,19 @@ void Scene::buildDefaultScene() {
     );
     meshes[0].setMesh(mesh);
     */
+
+    std::shared_ptr<Mesh> kiryu;
+    kiryu = MeshBuilder::getMesh("Assets/Meshes/untitled.obj");
+    std::shared_ptr<Mesh> ghorn = MeshBuilder::getMesh("Assets/Meshes/ghorn.obj");
+
+    meshes.emplace_back(
+        glm::vec3(0.0f, -0.25f, -1.5f),
+        glm::vec3(0.0f, 0.0f, 0.0f),
+        glm::vec3(0.5f, 0.5f, 0.5f),
+        red_mat
+    );
+    meshes[0].setMesh(kiryu);
+
     spheres.emplace_back(
         1,
         glm::vec3(0.0f, -20.5, 0.0f),

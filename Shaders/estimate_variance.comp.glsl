@@ -70,7 +70,7 @@ void main() {
     sumMoments2 /= sumWeight;
 
     // V = E[X^2] - E[X]^2
-    vec3 varianceRGB = abs(sumMoments2 - sumMoments1 * sumMoments1);
+    vec3 varianceRGB = (sumMoments2 - sumMoments1 * sumMoments1);
 
     float varianceFinal = max(varianceRGB.r, max(varianceRGB.g, varianceRGB.b));
 

@@ -168,6 +168,35 @@ void Engine::handleInputEvents() {
     cameraController->handleInputEvent(window);
 }
 
+void Engine::takeScreenShot(GLuint denoisedTexture) {
+    std::string outputName = "Screenshot_" + std::to_string(screenShots) + ".png";
+
+    std::string folderPath = "Results/Screenshots/";
+    if (!fs::exists(folderPath)) {
+        fs::create_directories(folderPath);
+    }
+
+    std::string fullSavePath = folderPath + outputName;
+
+    const int channels = 4;
+    size_t bufferSize = (size_t)width * height * channels;
+    unsigned char* buffer = new unsigned char[bufferSize];
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, denoisedTexture);
+    glReadPixels(0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, buffer);
+    stbi_flip_vertically_on_write(1);
+    int success = stbi_write_png(fullSavePath.c_str(), width, height, channels, buffer, width * channels);
+    stbi_flip_vertically_on_write(0);
+    if (success) {
+        printf("Screenshot %s saved successfully\n", fullSavePath.c_str());
+    }
+    else {
+        printf("Failed to save screenshot %s\n", fullSavePath.c_str());
+    }
+    delete[] buffer;
+    screenShots++;
+}
+
+
 
 void Engine::run() {
     unsigned int quadVAO = createRenderTarget();
@@ -186,34 +215,9 @@ void Engine::run() {
     while (!glfwWindowShouldClose(window)) {
 
         handleInputEvents();
-
-        double currentTime = glfwGetTime();
-        float deltaTime = currentTime - startTime;
-
-        // Orbit settings
-        const float orbitSpeed = 2.0f;   // How fast it orbits
-        const float orbitRadius = 2.5f;  // Distance from the green sphere
-        const int yellowSphereIndex = 0;
-        const int greenSphereIndex = 1;  // Assuming index 1 is the green sphere
-
-        // 1. Get the center position (The Green Sphere / "Planet")
-        glm::vec3 centerPos = scene->getSpheres()[greenSphereIndex].getPosition();
-
-        // 2. Calculate the orbital offset using Sin/Cos
-        // Using X and Z creates a horizontal "tabletop" orbit.
-        float offsetX = std::cos(deltaTime * orbitSpeed) * orbitRadius;
-        float offsetZ = std::sin(deltaTime * orbitSpeed) * orbitRadius;
-
-        // 3. Apply the new position
-        glm::vec3 newPos = centerPos;
-        newPos.x += offsetX;
-        newPos.z += offsetZ;
-        // newPos.y stays the same (equatorial orbit), or set it to centerPos.y if you want them aligned vertically
-
-        scene->getSpheres()[yellowSphereIndex].setPosition(newPos);
-
-        // 4. Update the SSBO (Crucial for motion vectors!)
-        updateMovingSphere(yellowSphereIndex);
+        if (glfwGetKey(window, GLFW_KEY_ENTER) == GLFW_PRESS) {
+            takeScreenShot(denoiser.getDenoisedTexture(currentFrame));
+        }
 
         glClear(GL_COLOR_BUFFER_BIT);
         ImGui_ImplOpenGL3_NewFrame();
@@ -223,7 +227,6 @@ void Engine::run() {
         frameCount++;
 
         raytracePass(frameCount, currentFrame, historyFrame);
-        printf("RPP: %d | MRB: %d \n", rpp, mrb);
 
         if (denoiserActive) {
             accumulationPass(frameCount, currentFrame, historyFrame);

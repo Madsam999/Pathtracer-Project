@@ -207,7 +207,7 @@ void SVGFDenoiser::atrousFilterPass(int& currentFrameIndex, int& historyFrameInd
     glBindImageTexture(4, normalTextures[currentFrameIndex], 0, GL_FALSE, 0, GL_READ_ONLY, GL_RGBA32F);
     glBindImageTexture(5, depthTextures[currentFrameIndex], 0, GL_FALSE, 0, GL_READ_ONLY, GL_R32F);
 
-    for (int i = 0; i < 5; i++) { // Ensure you run ~4-5 iterations for good results
+    for (int i = 0; i < 5; i++) {
         int stepSize = 1 << i;
         atrousPassShader.setInt("stepSize", stepSize);
 

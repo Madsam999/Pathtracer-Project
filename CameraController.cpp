@@ -37,7 +37,7 @@ void CameraController::handleInputEvent(GLFWwindow *window) {
     }
 
     if (cursorDisabled) {
-        double mouseX, mouseY;
+
         glfwGetCursorPos(window, &mouseX, &mouseY);
         handleMouseMove(static_cast<float>(mouseX), static_cast<float>(mouseY));
     }
