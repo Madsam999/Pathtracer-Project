@@ -11,3 +11,14 @@ In this project I use a few external libraries. For all my linear algebra needs 
 I don't have any long term plans for this project in terms of what I would like to implement. I'm kind of just following Sebastian Lague's videos and implementing features I think look or seem cool. I would like to get as far as my raytracer project that I did during my last semester (https://github.com/Madsam999/IFT3150_Cours_Projet) so I guess you could say that this is my long term goal.
 
 Thanks for checking out my repo! I'll add renders in an image folder as I progress through the project!
+
+In order to run this project, I used the builtin VcPkg module of CLion. On Windows,
+I installed the libraries in x64-mingw-dynamic and my CMake configuration to allow
+the program to run is: 
+
+-DCMAKE_TOOLCHAIN_FILE=C:[path_to_.vcpkg-clion]\scripts\buildsystems\vcpkg.cmake -DVCPKG_TARGET_TRIPLET=x64-mingw-dynamic
+
+On Linux and MacOs, it will probably be the same thing, but the VcPkg Target Triplet will differ
+because of the OS. When installing using VcPkg, you can either force VcPkg to use a specific
+Target Triplet or let it decide for you. If it decides for you, verify the Triplet it chose
+and specify it in the configuration by changing the DVCPKG_TARGET_TRIPLET field.
