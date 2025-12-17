@@ -1,0 +1,308 @@
+\documentclass[aspectratio=169]{beamer}
+
+% --- Thème et Couleurs ---
+\usetheme{Madrid}
+\usecolortheme{beaver} % Ou 'dolphin' pour du bleu, 'beaver' pour rouge/gris (style UdeM)
+
+% --- Packages ---
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[french]{babel}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{amsmath,amssymb}
+\usepackage{tikz}
+
+% --- Configuration Listings (Code) ---
+\definecolor{codegreen}{rgb}{0,0.6,0}
+\definecolor{codegray}{rgb}{0.5,0.5,0.5}
+\definecolor{codepurple}{rgb}{0.58,0,0.82}
+\definecolor{backcolour}{rgb}{0.95,0.95,0.92}
+
+\lstdefinestyle{mystyle}{
+    backgroundcolor=\color{backcolour},
+    commentstyle=\color{codegreen},
+    keywordstyle=\color{magenta},
+    numberstyle=\tiny\color{codegray},
+    stringstyle=\color{codepurple},
+    basicstyle=\ttfamily\tiny,
+    breakatwhitespace=false,
+    breaklines=true,
+    captionpos=b,
+    keepspaces=true,
+    numbers=left,
+    numbersep=2pt,
+    showspaces=false,
+    showstringspaces=false,
+    showtabs=false,
+    tabsize=2,
+}
+\lstset{
+    style=mystyle,
+}
+
+% --- Infos Titre ---
+\title[Pathtracing \& SVGF]{Pathtracing \& Filtre SVGF}
+\subtitle{Rendu en temps réel avec débruitage spatio-temporel}
+\author[Samuel Fournier]{Samuel Fournier (20218212)}
+\institute[UdeM]{
+    Département d'informatique et de recherche opérationnelle\\
+    Université de Montréal\\
+    \vspace{0.5cm}
+    \includegraphics[height=1.5cm]{udem.jpg} % Assure-toi que l'image est là ou commente cette ligne
+}
+\date{IFT 6150 -- Hiver 2025}
+
+\begin{document}
+
+% ------------------------------------------------------------
+% DIAPOSITIVE DE TITRE
+% ------------------------------------------------------------
+\begin{frame}
+    \titlepage
+\end{frame}
+
+% ------------------------------------------------------------
+% TABLE DES MATIÈRES
+% ------------------------------------------------------------
+\begin{frame}{Plan de la présentation}
+    \tableofcontents
+\end{frame}
+
+% ------------------------------------------------------------
+% SECTION 1: INTRODUCTION
+% ------------------------------------------------------------
+\section{Introduction}
+\begin{frame}{Introduction \& Objectifs}
+    \begin{columns}
+        \column{0.6\textwidth}
+        \textbf{Le Problème :}
+        \begin{itemize}
+            \item Le Pathtracing produit des images réalistes mais est extrêmement coûteux.
+            \item Temps réel (30-60 FPS) $\rightarrow$ peu de rayons par pixel (SPP).
+            \item Peu de SPP $\rightarrow$ Image très bruitée.
+        \end{itemize}
+        
+        \vspace{0.5cm}
+        \textbf{La Solution :}
+        \begin{itemize}
+            \item \textbf{SVGF} (Spatiotemporal Variance-Guided Filtering).
+            \item Algorithme de NVIDIA (Schied et al.).
+            \item Combine accumulation temporelle et filtrage spatial intelligent.
+        \end{itemize}
+
+        \column{0.4\textwidth}
+        \centering
+        % Placeholder pour une image bruitée vs débruitée
+        \includegraphics[width=\textwidth]{Results/Screenshots/Screenshot_4.png} \\
+        \tiny{Exemple: 1 Rayon par Pixel (Bruité)}
+    \end{columns}
+\end{frame}
+
+% ------------------------------------------------------------
+% SECTION 2: PATHTRACING
+% ------------------------------------------------------------
+\section{Pathtracing \& Temps Réel}
+\begin{frame}[fragile]{Fonctionnement du Pathtracing}
+    \textbf{Pipeline simplifié :}
+    \begin{enumerate}
+        \item \textbf{Ray Gen :} Création des rayons depuis la caméra.
+        \item \textbf{Intersection :} Test rayon vs scène (Optimisation AABB).
+        \item \textbf{Shading :} Éclairage indirect, matériaux, émission.
+        \item \textbf{Rebond :} Génération d'un nouveau rayon (Diffuse/Spéculaire).
+    \end{enumerate}
+
+    \vspace{0.2cm}
+    \begin{block}{Défi de performance}
+        Complexité : $\mathcal{O}(P \cdot R \cdot B \cdot I)$.\\
+        Pour du temps réel, nous sommes limités à très peu de rayons par pixels.
+    \end{block}
+\end{frame}
+
+% ------------------------------------------------------------
+% SECTION 3: SVGF - TEMPOREL
+% ------------------------------------------------------------
+\section{Filtrage Temporel (Reprojection)}
+\begin{frame}{Le concept de Reprojection}
+    L'idée : Réutiliser l'information des images précédentes pour accumuler de la lumière.
+    
+    \vspace{0.3cm}
+    \textbf{Le G-Buffer (Geometry Buffer) :}
+    Nous stockons plus que la couleur :
+    \begin{itemize}
+        \item Profondeur (Depth)
+        \item Normales
+        \item Mesh ID
+        \item \textbf{Motion Vectors} (Vecteurs de mouvement)
+    \end{itemize}
+
+    \vspace{0.3cm}
+    \textbf{Motion Vectors :} 
+    Calculer où se trouvait le pixel actuel dans l'image précédente ($UV_{prev} = UV_{curr} - Motion$).
+\end{frame}
+
+\begin{frame}[fragile]{Validité de l'Historique}
+    On ne peut pas aveuglément réutiliser l'historique (objets qui bougent, ombres, désocclusion).
+    
+    Trois tests de rejet :
+    \begin{enumerate}
+        \item \textbf{Profondeur :} Si l'écart est trop grand.
+        \item \textbf{Normale :} Si l'angle a trop changé.
+        \item \textbf{Mesh ID :} Si l'objet n'est plus le même.
+    \end{enumerate}
+
+    \begin{lstlisting}[language=C++]
+// Exemple de logique de rejet
+if(abs(currentDepth - historyDepth) > DEPTH_THRESHOLD) isValid = false;
+if(dot(currentNormal, historyNormal) < 0.9) isValid = false;
+if(currentMeshID != historyMeshID) isValid = false;
+    \end{lstlisting}
+    \textbf{Résultat :} Accumulation via moyenne mobile exponentielle (EMA) si valide.
+\end{frame}
+
+\begin{frame}{Résultats de l'accumulation temporelle}
+    $$oldAccumulationCount = historyColor.a$$
+    $$clampedOldCount = min(1024, oldAccumulationCount)$$
+    $$alpha = \frac{1}{clampedOldCount}$$
+    $$finalColor = mix(historyColor.rgb, noisyColor.rgb, alpha)$$
+    \textit{Plus la variable d'accumulation est grande, plus on favorise l'historique débruitée. On restreint le terme
+    d'accumulation pour que l'accumulation ne favorise pas excessivement l'hitorique et ignore l'image qui vient
+    d'être générée.}
+\end{frame}
+
+% ------------------------------------------------------------
+% SECTION 4: SVGF - SPATIAL
+% ------------------------------------------------------------
+\section{Filtrage Spatial (À-trous)}
+\begin{frame}{Filtre Spatial À-trous}
+    Même avec l'accumulation temporelle, il reste du bruit (surtout zones en mouvement).
+    
+    \textbf{La méthode :}
+    \begin{itemize}
+        \item Filtre "Wavelet" À-trous (avec des trous).
+        \item 5 itérations.
+        \item À chaque itération, on double l'espacement ($2^k$) entre les échantillons.
+        \item Permet de couvrir un voisinage de $33 \times 33$ avec un noyau $5 \times 5$.
+    \end{itemize}
+
+    \vspace{0.2cm}
+    \textbf{Variance-Guided :}
+    Le flou ne doit pas détruire les bords (edges). On utilise des poids ($w$).
+\end{frame}
+
+\begin{frame}[fragile]{Pondération du Filtre (Edge-Stopping)}
+    Pour chaque pixel voisin, on calcule un poids $w = w_n \cdot w_z \cdot w_l$.
+
+    \begin{columns}
+        \column{0.5\textwidth}
+        \begin{block}{1. Normales ($w_n$)}
+            Préserve les arêtes géométriques.
+            $$ w_n = \text{max}(0, n_c \cdot n_s)^{\phi_n} $$
+        \end{block}
+        \begin{block}{2. Profondeur ($w_z$)}
+            Évite de mélanger avant-plan et arrière-plan.
+            $$ w_z = \exp\{-\frac{|d_c - d_s|}{d_g} \cdot \phi_d\}$$
+        \end{block}
+
+        \column{0.5\textwidth}
+        \begin{block}{3. Luminance / Variance ($w_l$)}
+            Le cœur du SVGF. On normalise par la variance locale.
+            $$w_l = \exp\{-\frac{|l_c - l_s|}{\phi_l \cdot \sigma}\}$$
+        \end{block}
+    \end{columns}
+    \vspace{0.3cm}
+    \textit{Plus la variance est élevée, plus le filtre autorise le flou pour lisser le bruit.}
+\end{frame}
+    
+\begin{frame}{Couleurs et variance finales}
+    La couleur finale est:
+    $$finalColor = \frac{\sum c_s \cdot w}{\sum w}$$
+    Et la nouvelle variance débruitée est:
+    $$finalVariance = \frac{\sum \sigma^2}{\sum w^2}$$
+    \textit{On applique un débruitage sur le guide du débruiteur.}
+\end{frame}
+
+% ------------------------------------------------------------
+% SECTION 5: RÉSULTATS
+% ------------------------------------------------------------
+\section{Implémentation \& Résultats}
+\begin{frame}{Détails d'implémentation}
+    \begin{itemize}
+        \item \textbf{Langage :} C++ \& GLSL (Compute Shaders).
+        \item \textbf{API :} OpenGL 4.6.
+        \item \textbf{Matériel :} AMD Ryzen 5 7600 + \textbf{Radeon RX 6800}.
+        \item \textbf{Librairies :} GLFW, GLM, STB, ImGui.
+    \end{itemize}
+    
+    \vspace{0.5cm}
+    \textbf{Comparaison de Performance :}
+    \begin{table}
+        \centering
+        \begin{tabular}{lcc}
+            \toprule
+            Méthode & SPP (Rayons/Pixel) & FPS Moyens \\
+            \midrule
+            Pathtracing Brut & 1000 & $\sim 6.7$ FPS \\
+            Pathtracing Brut & 98 & $\sim 1400$ FPS (Bruité) \\
+            \textbf{SVGF (Final)} & \textbf{1} & \textbf{$\sim 124$ FPS} \\
+            \bottomrule
+        \end{tabular}
+        \caption{Comparaison sur scène simple (4 sphères)}
+    \end{table}
+\end{frame}
+
+\begin{frame}{Comparaison Visuelle}
+    \begin{columns}
+        \column{0.5\textwidth}
+        \centering
+        \includegraphics[width=0.95\textwidth]{Results/Screenshots/Screenshot_4.png}
+        \\ \textbf{Entrée :} 1 SPP (Bruité)
+        
+        \column{0.5\textwidth}
+        \centering
+        \includegraphics[width=0.95\textwidth]{Results/Screenshots/Screenshot_8.png}
+        \\ \textbf{Sortie :} SVGF Débruité
+    \end{columns}
+\end{frame}
+
+\begin{frame}{Résultats sur maillage (Hatsune Miku)}
+    \centering
+    \includegraphics[width=0.7\textwidth]{Results/Screenshots/Screenshot_9.png}
+    
+    \vspace{0.2cm}
+    Scène avec 595 triangles, éclairage indirect uniquement. \\
+    Rendu à $\sim 20$ FPS avec 1 rayon par pixel.
+\end{frame}
+
+% ------------------------------------------------------------
+% SECTION 6: CONCLUSION
+% ------------------------------------------------------------
+\section{Conclusion}
+\begin{frame}{Conclusion}
+    \textbf{Résumé :}
+    \begin{itemize}
+        \item Le SVGF rend le Pathtracing plus viable pour le temps réel.
+        \item Qualité visuelle supérieure au rasterization classique.
+        \item Passage de 6 FPS (1000 spp) à 120+ FPS (1 spp + SVGF).
+    \end{itemize}
+
+    \vspace{0.5cm}
+    \textbf{Travaux futurs :}
+    \begin{itemize}
+        \item Implémentation d'un \textbf{BVH} (Bounding Volume Hierarchy) pour supporter des scènes complexes.
+        \item Ajout de l'éclairage direct (Next Event Estimation).
+        \item Amélioration de la gestion des réflexions spéculaires (qui deviennent floues avec le SVGF actuel).
+    \end{itemize}
+\end{frame}
+
+\begin{frame}
+    \centering
+    \Huge \textbf{Merci de votre attention}
+    
+    \vspace{1cm}
+    \Large Avez-vous des questions ?
+\end{frame}
+
+\end{document}
