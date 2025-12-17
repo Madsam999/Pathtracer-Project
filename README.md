@@ -21,4 +21,5 @@ the program to run is:
 On Linux and MacOs, it will probably be the same thing, but the VcPkg Target Triplet will differ
 because of the OS. When installing using VcPkg, you can either force VcPkg to use a specific
 Target Triplet or let it decide for you. If it decides for you, verify the Triplet it chose
-and specify it in the configuration by changing the DVCPKG_TARGET_TRIPLET field.
+and specify it in the configuration by changing the DVCPKG_TARGET_TRIPLET field. I did test on Linux
+and once all the libraries are installed, the program runs the same as on Windows. I haven't tested on Mac.
